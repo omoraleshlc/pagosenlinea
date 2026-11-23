@@ -386,7 +386,12 @@ export function PagoRapidoForm() {
         );
         return;
       }
-      setCodigo3ds("");
+      // Demo success card (4242…): skip 3DS friction and complete payment.
+      if (final === "4242") {
+        void terminarPagoDemo("Pagado");
+        return;
+      }
+      setCodigo3ds("123456");
       setError3ds("");
       setIntentos3ds(0);
       setTresDS(true);
@@ -398,7 +403,7 @@ export function PagoRapidoForm() {
     if (codigo3ds === "000000") {
       const next = intentos3ds + 1;
       setIntentos3ds(next);
-      setCodigo3ds("");
+      setCodigo3ds("123456");
       if (next >= 3) {
         setTresDS(false);
         rechazar(
@@ -407,7 +412,8 @@ export function PagoRapidoForm() {
         );
       } else {
         setError3ds(
-          `Código incorrecto. Te quedan ${3 - next} ${3 - next === 1 ? "intento" : "intentos"}.`,
+          "000000 es el código de fallo de prueba. Usa 123456 (ya lo rellenamos). Te quedan " +
+            `${3 - next} ${3 - next === 1 ? "intento" : "intentos"}.`,
         );
       }
       return;
@@ -971,8 +977,8 @@ export function PagoRapidoForm() {
             <div className="modal-3ds-card">
               <h3>Verificación 3D Secure</h3>
               <p>
-                Tu banco envió un código. En demostración usa cualquier código
-                de 6 dígitos distinto de 000000.
+                Demostración: confirma con <strong>123456</strong>. Solo{" "}
+                <strong>000000</strong> simula un código incorrecto.
               </p>
               <label className="field">
                 <span>Código</span>
@@ -982,7 +988,7 @@ export function PagoRapidoForm() {
                     setCodigo3ds(e.target.value.replace(/\D/g, "").slice(0, 6))
                   }
                   inputMode="numeric"
-                  placeholder="••••••"
+                  placeholder="123456"
                   autoFocus
                 />
               </label>

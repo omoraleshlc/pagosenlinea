@@ -23,7 +23,7 @@ export const DEMO_CARDS: DemoCard[] = [
   {
     id: "ok",
     label: "Pago exitoso",
-    hint: "3DS → usa cualquier código de 6 dígitos excepto 000000",
+    hint: "Pago directo sin 3DS (tarjeta …4242)",
     numero: "4242 4242 4242 4242",
     nombre: "PACIENTE DEMO",
     vence: "12/30",
