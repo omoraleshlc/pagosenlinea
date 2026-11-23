@@ -57,18 +57,7 @@ const METODOS: {
     desc: "Visa, Mastercard o American Express",
     tiempo: "Al instante",
   },
-  {
-    id: "spei",
-    titulo: "Transferencia SPEI",
-    desc: "Desde tu banca en línea con CLABE",
-    tiempo: "Minutos",
-  },
-  {
-    id: "tienda",
-    titulo: "Pago en tienda (OXXO)",
-    desc: "Referencia para pagar en efectivo",
-    tiempo: "1 a 24 h",
-  },
+  // Mercado Pago SPEI/OXXO stashed — re-add when PAYMENTS_LAN_ONLY is back on.
 ];
 
 function fechaMxValida(value: string) {
@@ -653,17 +642,6 @@ export function PagoRapidoForm() {
             }}
           >
             Intentar con otra tarjeta
-          </button>
-          <button
-            type="button"
-            className="btn-secondary btn-block"
-            onClick={() => {
-              setFallo(null);
-              setMetodo("spei");
-              setPaso("metodo");
-            }}
-          >
-            Pagar con SPEI
           </button>
           <button type="button" className="link-button" onClick={limpiar}>
             Buscar otro folio

@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
         ok: false,
         code: "disabled",
         message:
-          "SPEI/OXXO reales solo están habilitados en el servidor de desarrollo LAN.",
+          "Mercado Pago (SPEI/OXXO) está pausado por ahora. Usa tarjeta o paga en caja.",
       },
       { status: 403 },
     );

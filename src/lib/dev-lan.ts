@@ -1,11 +1,11 @@
 import { NextRequest } from "next/server";
 
 /**
- * Developer / LAN portal only (pagosenlinea.sshlc.org on the hospital network).
- * Real SPEI/OXXO stays off unless explicitly enabled and the Host looks local/dev.
+ * Mercado Pago SPEI/OXXO — stashed by default (no live MP creates / emails).
+ * Re-enable with PAYMENTS_LAN_ONLY=true + MERCADOPAGO_ACCESS_TOKEN on the LAN portal.
  */
 export function paymentsLanEnabled() {
-  const flag = (process.env.PAYMENTS_LAN_ONLY || "true").toLowerCase();
+  const flag = (process.env.PAYMENTS_LAN_ONLY || "false").toLowerCase();
   if (flag === "false" || flag === "0" || flag === "off") return false;
   return Boolean(process.env.MERCADOPAGO_ACCESS_TOKEN?.trim());
 }
