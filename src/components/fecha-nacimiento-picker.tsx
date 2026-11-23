@@ -1,6 +1,11 @@
 "use client";
 
-import { forwardRef } from "react";
+import {
+  ChangeEvent,
+  FocusEventHandler,
+  MouseEventHandler,
+  forwardRef,
+} from "react";
 import DatePicker, { registerLocale } from "react-datepicker";
 import { es } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
@@ -48,24 +53,38 @@ function toFechaMx(date: Date | null): string {
 }
 
 type MaskedInputProps = {
+  /** Controlled masked string from parent (partial typing allowed). */
   displayValue: string;
   onMaskedChange: (value: string) => void;
-  onClick?: () => void;
+  /** Injected by react-datepicker — ignored for value; used for calendar open. */
+  value?: string;
+  onClick?: MouseEventHandler<HTMLInputElement>;
+  onChange?: (event: ChangeEvent<HTMLInputElement>) => void;
+  onFocus?: FocusEventHandler<HTMLInputElement>;
+  onBlur?: FocusEventHandler<HTMLInputElement>;
   className?: string;
   id?: string;
   "aria-describedby"?: string;
+  placeholder?: string;
 };
 
-/** Text field with slash masking; DatePicker opens calendar via icon/focus. */
+/**
+ * Keeps slash masking (15 → 15/ → 15/03/1988) while DatePicker owns the calendar icon.
+ */
 const MaskedDateInput = forwardRef<HTMLInputElement, MaskedInputProps>(
   function MaskedDateInput(
     {
       displayValue,
       onMaskedChange,
+      value: _datepickerValue,
       onClick,
+      onChange: _datepickerOnChange,
+      onFocus,
+      onBlur,
       className,
       id,
       "aria-describedby": ariaDescribedBy,
+      placeholder = "dd/mm/aaaa",
     },
     ref,
   ) {
@@ -77,11 +96,16 @@ const MaskedDateInput = forwardRef<HTMLInputElement, MaskedInputProps>(
         value={displayValue}
         inputMode="numeric"
         autoComplete="bday"
-        placeholder="dd/mm/aaaa"
+        placeholder={placeholder}
         maxLength={10}
         aria-describedby={ariaDescribedBy}
         onClick={onClick}
-        onChange={(e) => onMaskedChange(formatearFechaMx(e.target.value))}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        onChange={(e) => {
+          const masked = formatearFechaMx(e.target.value);
+          onMaskedChange(masked);
+        }}
       />
     );
   },
@@ -115,6 +139,8 @@ export function FechaNacimientoPicker({
         scrollableYearDropdown
         showIcon
         toggleCalendarOnIconClick
+        preventOpenOnFocus
+        shouldCloseOnSelect
         calendarClassName="fecha-picker-calendar"
         isClearable
         customInput={
