@@ -209,7 +209,7 @@ export function LoginForm() {
           <p className="create-account">
             ¿Primera vez? <Link href="/register">Crea tu cuenta</Link>
           </p>
-          <Link href="/register" className="pago-rapido">
+          <Link href="/pago-rapido" className="pago-rapido">
             <ReceiptIcon /> Pagar sin cuenta con mi folio
           </Link>
         </div>

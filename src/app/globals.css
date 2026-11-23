@@ -271,6 +271,144 @@ a:hover {
   animation: rise 0.55s ease-out 0.05s both;
 }
 
+.login-panel-inner.wide {
+  width: min(100%, 32rem);
+}
+
+.field input.mono,
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-transform: uppercase;
+}
+
+.field-error {
+  font-size: 0.75rem;
+  color: #d92d20;
+}
+
+.form-error {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  background: #fef3f2;
+  color: #b42318;
+  font-size: 0.875rem;
+}
+
+.pago-rapido-result {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 0.25rem;
+}
+
+.cuenta-card {
+  border: 1px solid var(--gray-200);
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+.cuenta-card-head {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.cuenta-meta {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--gray-500);
+}
+
+.cuenta-paciente {
+  margin: 0.25rem 0 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--gray-800);
+}
+
+.cuenta-cargos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cuenta-cargos li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--gray-100);
+  font-size: 0.875rem;
+}
+
+.cuenta-cargos li:first-child {
+  border-top: 0;
+}
+
+.cargo-info {
+  min-width: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.cargo-concepto {
+  color: var(--gray-800);
+}
+
+.cargo-vence {
+  font-size: 0.75rem;
+  color: var(--gray-500);
+}
+
+.cargo-monto {
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--gray-800);
+}
+
+.cuenta-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--gray-100);
+  font-size: 0.875rem;
+  color: var(--gray-800);
+}
+
+.cuenta-total strong {
+  font-size: 1.25rem;
+}
+
+.info-note {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--gray-50);
+  color: var(--gray-500);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.info-note a {
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.link-button {
+  border: 0;
+  background: transparent;
+  color: var(--brand-500);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  text-align: center;
+  padding: 0.25rem;
+}
+
+.link-button:hover {
+  color: var(--brand-600);
+}
+
 .login-brand-mobile {
   display: block;
   margin-bottom: 2rem;
