@@ -17,6 +17,30 @@ type Resultado = {
   total: number;
 };
 
+/** Mexico display format dd/mm/yyyy with light masking while typing. */
+function formatearFechaMx(raw: string) {
+  const digits = raw.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function fechaMxValida(value: string) {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
+  if (!m) return false;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  if (year < 1900 || year > new Date().getFullYear()) return false;
+  const dt = new Date(year, month - 1, day);
+  return (
+    dt.getFullYear() === year &&
+    dt.getMonth() === month - 1 &&
+    dt.getDate() === day
+  );
+}
+
 export function PagoRapidoForm() {
   const [folio, setFolio] = useState("");
   const [nacimiento, setNacimiento] = useState("");
@@ -27,6 +51,7 @@ export function PagoRapidoForm() {
   const [pagoMsg, setPagoMsg] = useState<string | null>(null);
 
   const folioOk = folioValido(folio);
+  const nacimientoOk = fechaMxValida(nacimiento);
 
   function buscar(event: FormEvent) {
     event.preventDefault();
@@ -34,7 +59,7 @@ export function PagoRapidoForm() {
     setNoEncontrado(false);
     setResultado(null);
     setPagoMsg(null);
-    if (!folioOk || !nacimiento) return;
+    if (!folioOk || !nacimientoOk) return;
 
     setBuscando(true);
     window.setTimeout(() => {
@@ -141,14 +166,25 @@ export function PagoRapidoForm() {
       <label className="field">
         <span>Fecha de nacimiento del paciente</span>
         <input
-          type="date"
+          type="text"
+          inputMode="numeric"
+          autoComplete="bday"
+          placeholder="dd/mm/aaaa"
           value={nacimiento}
-          onChange={(e) => setNacimiento(e.target.value)}
+          onChange={(e) => setNacimiento(formatearFechaMx(e.target.value))}
+          maxLength={10}
           required
+          aria-describedby="nacimiento-hint"
         />
-        {intento && !nacimiento ? (
-          <span className="field-error">Indica la fecha de nacimiento.</span>
-        ) : null}
+        {intento && !nacimientoOk ? (
+          <span className="field-error">
+            Escribe la fecha como dd/mm/aaaa (ejemplo: 15/03/1988).
+          </span>
+        ) : (
+          <span id="nacimiento-hint" className="field-hint">
+            Formato México: dd/mm/aaaa
+          </span>
+        )}
       </label>
 
       {noEncontrado ? (
