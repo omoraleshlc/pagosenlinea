@@ -169,8 +169,48 @@ export function estadoPortalFromMp(status: string) {
   if (status === "pending" || status === "in_process") {
     return "En revisión" as const;
   }
-  if (status === "rejected" || status === "cancelled" || status === "refunded") {
+  if (status === "cancelled") return "Cancelado" as const;
+  if (status === "rejected" || status === "refunded") {
     return "Rechazado" as const;
   }
   return "Pendiente" as const;
+}
+
+export async function cancelarPagoMp(paymentId: string): Promise<
+  | { ok: true; paymentId: string; status: string }
+  | { ok: false; code: "mp_unavailable" | "mp_rejected"; message: string }
+> {
+  const token = process.env.MERCADOPAGO_ACCESS_TOKEN?.trim();
+  if (!token) {
+    return {
+      ok: false,
+      code: "mp_unavailable",
+      message: "Mercado Pago no está configurado.",
+    };
+  }
+  const res = await fetch(
+    `https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status: "cancelled" }),
+    },
+  );
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) {
+    const msg =
+      typeof data.message === "string"
+        ? data.message
+        : "No pudimos cancelar la referencia.";
+    console.error("mercadopago cancel", res.status, data);
+    return { ok: false, code: "mp_rejected", message: msg };
+  }
+  return {
+    ok: true,
+    paymentId: String(data.id || paymentId),
+    status: String(data.status || "cancelled"),
+  };
 }
