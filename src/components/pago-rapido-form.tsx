@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
 import { Cargo, fechaCorta, folioValido, mxn } from "@/lib/mock-cargos";
 import { FechaNacimientoPicker } from "./fecha-nacimiento-picker";
@@ -11,6 +11,46 @@ type Resultado = {
   total: number;
   folio: string;
 };
+
+type Metodo = "tarjeta" | "spei" | "tienda";
+
+type Paso = "buscar" | "cuenta" | "metodo" | "confirmar" | "resultado" | "fallo";
+
+type PagoOk = {
+  estado: "Pagado" | "En revisión" | "Pendiente";
+  folioPago: string;
+  monto: number;
+  metodoLabel: string;
+  autorizacion?: string;
+  referencia?: string;
+  email: string;
+};
+
+const METODOS: {
+  id: Metodo;
+  titulo: string;
+  desc: string;
+  tiempo: string;
+}[] = [
+  {
+    id: "tarjeta",
+    titulo: "Tarjeta de crédito o débito",
+    desc: "Visa, Mastercard o American Express",
+    tiempo: "Al instante",
+  },
+  {
+    id: "spei",
+    titulo: "Transferencia SPEI",
+    desc: "Desde tu banca en línea con CLABE",
+    tiempo: "Minutos",
+  },
+  {
+    id: "tienda",
+    titulo: "Pago en tienda (OXXO)",
+    desc: "Referencia para pagar en efectivo",
+    tiempo: "1 a 24 h",
+  },
+];
 
 function fechaMxValida(value: string) {
   const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
@@ -28,6 +68,16 @@ function fechaMxValida(value: string) {
   );
 }
 
+function folioPagoNuevo() {
+  const n = Math.floor(100000 + Math.random() * 900000);
+  return `PEL${n}`;
+}
+
+function clabeDemo(folio: string) {
+  const digits = folio.replace(/\D/g, "").padEnd(10, "0").slice(0, 10);
+  return `6461801578${digits}`.slice(0, 18);
+}
+
 export function PagoRapidoForm() {
   const [folio, setFolio] = useState("");
   const [nacimiento, setNacimiento] = useState("");
@@ -35,17 +85,68 @@ export function PagoRapidoForm() {
   const [buscando, setBuscando] = useState(false);
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [pagoMsg, setPagoMsg] = useState<string | null>(null);
+
+  const [paso, setPaso] = useState<Paso>("buscar");
+  const [metodo, setMetodo] = useState<Metodo>("tarjeta");
+  const [email, setEmail] = useState("");
+  const [acepto, setAcepto] = useState(false);
+  const [tarjeta, setTarjeta] = useState({
+    numero: "",
+    nombre: "",
+    vence: "",
+    cvv: "",
+  });
+  const [procesando, setProcesando] = useState(false);
+  const [tresDS, setTresDS] = useState(false);
+  const [codigo3ds, setCodigo3ds] = useState("");
+  const [error3ds, setError3ds] = useState("");
+  const [intentos3ds, setIntentos3ds] = useState(0);
+  const [pagoOk, setPagoOk] = useState<PagoOk | null>(null);
+  const [fallo, setFallo] = useState<{
+    titulo: string;
+    detalle: string;
+    metodoLabel: string;
+    folioPago: string;
+  } | null>(null);
+  const [copiado, setCopiado] = useState(false);
 
   const folioOk = folioValido(folio);
   const nacimientoOk = fechaMxValida(nacimiento);
+
+  const digitos = tarjeta.numero.replace(/\D/g, "");
+  const marca = useMemo(() => {
+    if (/^4/.test(digitos)) return "Visa";
+    if (/^(5[1-5]|2[2-7])/.test(digitos)) return "Mastercard";
+    if (/^3[47]/.test(digitos)) return "American Express";
+    return "";
+  }, [digitos]);
+
+  const tarjetaValida =
+    digitos.length >= 15 &&
+    tarjeta.nombre.trim().length > 3 &&
+    /^(0[1-9]|1[0-2])\/\d{2}$/.test(tarjeta.vence) &&
+    tarjeta.cvv.length >= 3;
+
+  const emailOk = /\S+@\S+\.\S+/.test(email.trim());
+  const metodoLabel =
+    metodo === "tarjeta"
+      ? `${marca || "Tarjeta"} ···· ${digitos.slice(-4) || "0000"}`
+      : metodo === "spei"
+        ? "SPEI"
+        : "OXXO";
+
+  const puedeConfirmar =
+    acepto &&
+    emailOk &&
+    (metodo !== "tarjeta" || tarjetaValida) &&
+    !!resultado;
 
   async function buscar(event: FormEvent) {
     event.preventDefault();
     setIntento(true);
     setErrorMsg(null);
     setResultado(null);
-    setPagoMsg(null);
+    setPaso("buscar");
     if (!folioOk || !nacimientoOk) return;
 
     setBuscando(true);
@@ -72,6 +173,7 @@ export function PagoRapidoForm() {
         cargos: data.cargos,
         total: data.total,
       });
+      setPaso("cuenta");
     } catch {
       setErrorMsg(
         "No pudimos consultar el folio en este momento. Intenta de nuevo.",
@@ -85,12 +187,494 @@ export function PagoRapidoForm() {
     setResultado(null);
     setErrorMsg(null);
     setIntento(false);
-    setPagoMsg(null);
+    setPaso("buscar");
+    setPagoOk(null);
+    setFallo(null);
+    setAcepto(false);
+    setTresDS(false);
+    setTarjeta({ numero: "", nombre: "", vence: "", cvv: "" });
   }
 
-  if (resultado) {
+  function formatearNumero(value: string) {
+    const d = value.replace(/\D/g, "").slice(0, 16);
+    setTarjeta((t) => ({
+      ...t,
+      numero: d.replace(/(.{4})/g, "$1 ").trim(),
+    }));
+  }
+
+  function formatearVence(value: string) {
+    const d = value.replace(/\D/g, "").slice(0, 4);
+    setTarjeta((t) => ({
+      ...t,
+      vence: d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d,
+    }));
+  }
+
+  function terminarPago(estado: PagoOk["estado"]) {
+    if (!resultado) return;
+    const folioPago = folioPagoNuevo();
+    setPagoOk({
+      estado,
+      folioPago,
+      monto: resultado.total,
+      metodoLabel,
+      email: email.trim(),
+      autorizacion:
+        estado === "Pagado"
+          ? String(100000 + Math.floor(Math.random() * 900000))
+          : undefined,
+      referencia:
+        estado === "Pagado"
+          ? undefined
+          : metodo === "spei"
+            ? clabeDemo(resultado.folio)
+            : `OX${resultado.folio.replace(/\D/g, "").slice(-10)}`,
+    });
+    setPaso("resultado");
+  }
+
+  function rechazar(titulo: string, detalle: string) {
+    setFallo({
+      titulo,
+      detalle,
+      metodoLabel,
+      folioPago: folioPagoNuevo(),
+    });
+    setPaso("fallo");
+  }
+
+  function pagar() {
+    if (!puedeConfirmar || procesando || !resultado) return;
+    setProcesando(true);
+    window.setTimeout(() => {
+      setProcesando(false);
+      if (metodo === "tarjeta") {
+        const final = digitos.slice(-4);
+        if (final === "0002") {
+          rechazar(
+            "Tu banco rechazó el pago",
+            "Fondos insuficientes o la tarjeta no está habilitada para compras en línea.",
+          );
+          return;
+        }
+        if (final === "0069") {
+          rechazar(
+            "Tu tarjeta está vencida",
+            "La fecha de vencimiento ya pasó. Revisa los datos o usa otra tarjeta.",
+          );
+          return;
+        }
+        setCodigo3ds("");
+        setError3ds("");
+        setIntentos3ds(0);
+        setTresDS(true);
+        return;
+      }
+      terminarPago(metodo === "spei" ? "En revisión" : "Pendiente");
+    }, 900);
+  }
+
+  function confirmar3DS() {
+    if (codigo3ds.length < 6) return;
+    if (codigo3ds === "000000") {
+      const next = intentos3ds + 1;
+      setIntentos3ds(next);
+      setCodigo3ds("");
+      if (next >= 3) {
+        setTresDS(false);
+        rechazar(
+          "No pudimos verificar tu identidad",
+          "Escribiste un código incorrecto 3 veces. Por seguridad bloqueamos este intento.",
+        );
+      } else {
+        setError3ds(
+          `Código incorrecto. Te quedan ${3 - next} ${3 - next === 1 ? "intento" : "intentos"}.`,
+        );
+      }
+      return;
+    }
+    setError3ds("");
+    setTresDS(false);
+    setProcesando(true);
+    window.setTimeout(() => {
+      setProcesando(false);
+      terminarPago("Pagado");
+    }, 700);
+  }
+
+  async function copiarTexto(texto: string) {
+    try {
+      await navigator.clipboard.writeText(texto.replace(/\s/g, ""));
+      setCopiado(true);
+      window.setTimeout(() => setCopiado(false), 1500);
+    } catch {
+      /* clipboard may be blocked */
+    }
+  }
+
+  if (paso === "resultado" && pagoOk && resultado) {
     return (
       <div className="pago-rapido-result">
+        <div className="checkout-result">
+          <div
+            className={`checkout-result-icon ${pagoOk.estado === "Pagado" ? "ok" : "pending"}`}
+          >
+            {pagoOk.estado === "Pagado" ? "✓" : "…"}
+          </div>
+          <h2>
+            {pagoOk.estado === "Pagado"
+              ? "¡Pago recibido!"
+              : pagoOk.estado === "En revisión"
+                ? "Estamos esperando tu transferencia"
+                : "Referencia generada"}
+          </h2>
+          <p className="checkout-result-copy">
+            {pagoOk.estado === "Pagado"
+              ? `Enviamos tu comprobante a ${pagoOk.email}.`
+              : pagoOk.estado === "En revisión"
+                ? "Se acredita en minutos. Te avisaremos por correo cuando el banco lo confirme."
+                : "Paga en tienda con la referencia. Se refleja en tu cuenta de 1 a 24 horas."}
+          </p>
+          <dl className="checkout-summary">
+            <div>
+              <dt>Cuenta</dt>
+              <dd>{resultado.folio}</dd>
+            </div>
+            <div>
+              <dt>Folio de pago</dt>
+              <dd>{pagoOk.folioPago}</dd>
+            </div>
+            <div>
+              <dt>Monto</dt>
+              <dd>{mxn(pagoOk.monto)}</dd>
+            </div>
+            <div>
+              <dt>Método</dt>
+              <dd>{pagoOk.metodoLabel}</dd>
+            </div>
+            <div>
+              <dt>{pagoOk.autorizacion ? "Autorización" : "Referencia"}</dt>
+              <dd className="mono">
+                {pagoOk.autorizacion ?? pagoOk.referencia}
+              </dd>
+            </div>
+          </dl>
+          {pagoOk.estado !== "Pagado" && pagoOk.referencia ? (
+            <div className="checkout-ref-box">
+              <p>
+                {metodo === "spei"
+                  ? "Transfiere el monto exacto a esta CLABE:"
+                  : "Muestra esta referencia en caja de tienda:"}
+              </p>
+              <p className="mono checkout-ref-value">{pagoOk.referencia}</p>
+              <button
+                type="button"
+                className="btn-secondary btn-block"
+                onClick={() => copiarTexto(pagoOk.referencia!)}
+              >
+                {copiado ? "Copiado" : "Copiar referencia"}
+              </button>
+            </div>
+          ) : null}
+          <p className="field-hint">
+            Demostración del flujo de cobro. Cuando Conekta quede conectado, este
+            paso acreditará el pago real y lo aplicará en SIMA.
+          </p>
+          <button type="button" className="btn-primary btn-block" onClick={limpiar}>
+            Pagar otro folio
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (paso === "fallo" && fallo) {
+    return (
+      <div className="pago-rapido-result">
+        <div className="checkout-result">
+          <div className="checkout-result-icon err">!</div>
+          <h2>{fallo.titulo}</h2>
+          <p className="checkout-result-copy">{fallo.detalle}</p>
+          <p className="form-message ok">
+            No se realizó ningún cobro a {fallo.metodoLabel}.
+          </p>
+          <p className="field-hint">Folio de intento: {fallo.folioPago}</p>
+          <button
+            type="button"
+            className="btn-primary btn-block"
+            onClick={() => {
+              setFallo(null);
+              setTarjeta((t) => ({ ...t, numero: "", cvv: "" }));
+              setPaso("metodo");
+            }}
+          >
+            Intentar con otra tarjeta
+          </button>
+          <button
+            type="button"
+            className="btn-secondary btn-block"
+            onClick={() => {
+              setFallo(null);
+              setMetodo("spei");
+              setPaso("metodo");
+            }}
+          >
+            Pagar con SPEI
+          </button>
+          <button type="button" className="link-button" onClick={limpiar}>
+            Buscar otro folio
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (paso === "metodo" && resultado) {
+    return (
+      <div className="pago-rapido-result">
+        <p className="checkout-step">Paso 1 de 2 · Método de pago</p>
+        <div className="cuenta-card compact">
+          <div className="cuenta-card-head">
+            <p className="cuenta-meta">
+              Cuenta {resultado.folio} · {resultado.paciente}
+            </p>
+            <p className="cuenta-paciente">{mxn(resultado.total)}</p>
+          </div>
+        </div>
+
+        <div className="metodo-list" role="radiogroup" aria-label="Método de pago">
+          {METODOS.map((m) => (
+            <label
+              key={m.id}
+              className={`metodo-option ${metodo === m.id ? "active" : ""}`}
+            >
+              <input
+                type="radio"
+                name="metodo"
+                value={m.id}
+                checked={metodo === m.id}
+                onChange={() => setMetodo(m.id)}
+              />
+              <span className="metodo-copy">
+                <span className="metodo-titulo">{m.titulo}</span>
+                <span className="metodo-desc">{m.desc}</span>
+              </span>
+              <span className="metodo-tiempo">{m.tiempo}</span>
+            </label>
+          ))}
+        </div>
+
+        {metodo === "tarjeta" ? (
+          <div className="tarjeta-fields">
+            <label className="field">
+              <span>Número de tarjeta</span>
+              <div className="tarjeta-numero-wrap">
+                <input
+                  value={tarjeta.numero}
+                  onChange={(e) => formatearNumero(e.target.value)}
+                  inputMode="numeric"
+                  autoComplete="cc-number"
+                  placeholder="0000 0000 0000 0000"
+                />
+                {marca ? <span className="tarjeta-marca">{marca}</span> : null}
+              </div>
+            </label>
+            <label className="field">
+              <span>Nombre en la tarjeta</span>
+              <input
+                value={tarjeta.nombre}
+                onChange={(e) =>
+                  setTarjeta((t) => ({
+                    ...t,
+                    nombre: e.target.value.toUpperCase(),
+                  }))
+                }
+                autoComplete="cc-name"
+                placeholder="NOMBRE APELLIDO"
+              />
+            </label>
+            <div className="field-row">
+              <label className="field">
+                <span>Vencimiento</span>
+                <input
+                  value={tarjeta.vence}
+                  onChange={(e) => formatearVence(e.target.value)}
+                  inputMode="numeric"
+                  autoComplete="cc-exp"
+                  placeholder="MM/AA"
+                />
+              </label>
+              <label className="field">
+                <span>CVV</span>
+                <input
+                  value={tarjeta.cvv}
+                  onChange={(e) =>
+                    setTarjeta((t) => ({
+                      ...t,
+                      cvv: e.target.value.replace(/\D/g, "").slice(0, 4),
+                    }))
+                  }
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="cc-csc"
+                  placeholder="•••"
+                />
+              </label>
+            </div>
+            <p className="field-hint">
+              Demostración: termina en 0002 (rechazo) o 0069 (vencida). En
+              producción Conekta tokeniza la tarjeta; el hospital no la guarda.
+            </p>
+          </div>
+        ) : (
+          <p className="info-note">
+            {metodo === "spei"
+              ? "Al confirmar te damos la CLABE y el monto exacto para transferir."
+              : "Al confirmar te damos la referencia para pagar en OXXO."}
+          </p>
+        )}
+
+        <button
+          type="button"
+          className="btn-primary btn-block"
+          disabled={metodo === "tarjeta" && !tarjetaValida}
+          onClick={() => setPaso("confirmar")}
+        >
+          Continuar
+        </button>
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => setPaso("cuenta")}
+        >
+          Volver a la cuenta
+        </button>
+      </div>
+    );
+  }
+
+  if (paso === "confirmar" && resultado) {
+    return (
+      <div className="pago-rapido-result">
+        <p className="checkout-step">Paso 2 de 2 · Confirmar</p>
+        <div className="cuenta-card">
+          <div className="cuenta-card-head">
+            <p className="cuenta-meta">Resumen · {resultado.folio}</p>
+            <p className="cuenta-paciente">{resultado.paciente}</p>
+          </div>
+          <ul className="cuenta-cargos">
+            {resultado.cargos.map((c) => (
+              <li key={c.id}>
+                <span className="cargo-info">
+                  <span className="cargo-concepto">{c.concepto}</span>
+                </span>
+                <span className="cargo-monto">{mxn(c.monto)}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="cuenta-total">
+            <span>Total · {metodoLabel}</span>
+            <strong>{mxn(resultado.total)}</strong>
+          </div>
+        </div>
+
+        <label className="field">
+          <span>Correo para tu comprobante</span>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="tu@correo.com"
+            autoComplete="email"
+          />
+        </label>
+
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={acepto}
+            onChange={(e) => setAcepto(e.target.checked)}
+          />
+          <span>
+            Acepto los{" "}
+            <Link href="/register">términos del servicio</Link> y el aviso de
+            privacidad de Hospital La Carlota.
+          </span>
+        </label>
+
+        <button
+          type="button"
+          className="btn-primary btn-block"
+          disabled={!puedeConfirmar || procesando}
+          onClick={pagar}
+        >
+          {procesando ? "Procesando…" : `Pagar ${mxn(resultado.total)}`}
+        </button>
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => setPaso("metodo")}
+        >
+          Cambiar método
+        </button>
+
+        {tresDS ? (
+          <div className="modal-3ds" role="dialog" aria-modal="true">
+            <div className="modal-3ds-card">
+              <h3>Verificación 3D Secure</h3>
+              <p>
+                Tu banco envió un código. En demostración usa cualquier código
+                de 6 dígitos distinto de 000000.
+              </p>
+              <label className="field">
+                <span>Código</span>
+                <input
+                  value={codigo3ds}
+                  onChange={(e) =>
+                    setCodigo3ds(e.target.value.replace(/\D/g, "").slice(0, 6))
+                  }
+                  inputMode="numeric"
+                  placeholder="••••••"
+                  autoFocus
+                />
+              </label>
+              {error3ds ? (
+                <p className="field-error" role="alert">
+                  {error3ds}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                className="btn-primary btn-block"
+                disabled={codigo3ds.length < 6}
+                onClick={confirmar3DS}
+              >
+                Confirmar
+              </button>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => setTresDS(false)}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (paso === "cuenta" && resultado) {
+    return (
+      <div className="pago-rapido-result">
+        <div className="invitado-banner">
+          Estás pagando como invitado: recibirás el comprobante por correo, sin
+          historial.{" "}
+          <Link href="/register">Crea tu cuenta</Link> si quieres guardar tus
+          pagos.
+        </div>
         <div className="cuenta-card">
           <div className="cuenta-card-head">
             <p className="cuenta-meta">
@@ -103,7 +687,9 @@ export function PagoRapidoForm() {
               <li key={c.id}>
                 <span className="cargo-info">
                   <span className="cargo-concepto">{c.concepto}</span>
-                  <span className="cargo-vence">Vence {fechaCorta(c.vence)}</span>
+                  <span className="cargo-vence">
+                    Vence {fechaCorta(c.vence)}
+                  </span>
                 </span>
                 <span className="cargo-monto">{mxn(c.monto)}</span>
               </li>
@@ -118,21 +704,15 @@ export function PagoRapidoForm() {
         <button
           type="button"
           className="btn-primary btn-block"
-          onClick={() =>
-            setPagoMsg(
-              "El cobro en línea se habilitará cuando se conecte el procesador de pagos. Tus cargos ya están verificados.",
-            )
-          }
+          onClick={() => setPaso("metodo")}
         >
           Continuar al pago
         </button>
 
-        {pagoMsg ? <p className="form-message">{pagoMsg}</p> : null}
-
         <p className="info-note">
           Pagando sin cuenta recibirás tu comprobante por correo, pero no verás
-          historial. Puedes{" "}
-          <Link href="/register">crear tu cuenta</Link> cuando quieras.
+          historial. Puedes <Link href="/register">crear tu cuenta</Link> cuando
+          quieras.
         </p>
 
         <button type="button" className="link-button" onClick={limpiar}>
@@ -191,7 +771,11 @@ export function PagoRapidoForm() {
         </p>
       ) : null}
 
-      <button type="submit" className="btn-primary btn-block" disabled={buscando}>
+      <button
+        type="submit"
+        className="btn-primary btn-block"
+        disabled={buscando}
+      >
         {buscando ? "Buscando…" : "Buscar mi cuenta"}
       </button>
 

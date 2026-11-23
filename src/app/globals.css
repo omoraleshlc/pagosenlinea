@@ -511,6 +511,288 @@ a:hover {
   color: var(--brand-600);
 }
 
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  border: 1px solid var(--gray-300);
+  border-radius: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.75rem 1rem;
+  background: #fff;
+  color: var(--gray-700);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background: var(--gray-50);
+}
+
+.cuenta-card.compact .cuenta-card-head {
+  border-bottom: 0;
+}
+
+.invitado-banner {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--brand-100);
+  background: var(--brand-25);
+  color: var(--gray-700);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.invitado-banner a {
+  font-weight: 500;
+  text-decoration: none;
+  color: var(--brand-500);
+}
+
+.checkout-step {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--brand-500);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.metodo-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.metodo-option {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 0.75rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.metodo-option.active {
+  border-color: var(--brand-500);
+  background: var(--brand-25);
+  box-shadow: 0 0 0 2px rgba(33, 70, 144, 0.12);
+}
+
+.metodo-option input {
+  accent-color: var(--brand-500);
+}
+
+.metodo-copy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.metodo-titulo {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--gray-800);
+}
+
+.metodo-desc {
+  font-size: 0.75rem;
+  color: var(--gray-500);
+}
+
+.metodo-tiempo {
+  font-size: 0.75rem;
+  color: var(--gray-500);
+  white-space: nowrap;
+}
+
+.tarjeta-fields {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.tarjeta-numero-wrap {
+  position: relative;
+}
+
+.tarjeta-numero-wrap input {
+  width: 100%;
+  padding-right: 5.5rem;
+}
+
+.tarjeta-marca {
+  position: absolute;
+  right: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--brand-600);
+  background: var(--brand-50);
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.35rem;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  font-size: 0.8125rem;
+  color: var(--gray-700);
+  line-height: 1.45;
+}
+
+.check-row input {
+  margin-top: 0.15rem;
+  accent-color: var(--brand-500);
+}
+
+.check-row a {
+  color: var(--brand-500);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.checkout-result {
+  text-align: center;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.checkout-result h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--gray-800);
+}
+
+.checkout-result-copy {
+  margin: 0;
+  color: var(--gray-500);
+  font-size: 0.875rem;
+}
+
+.checkout-result-icon {
+  width: 3.5rem;
+  height: 3.5rem;
+  margin: 0 auto;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.checkout-result-icon.ok {
+  background: #ecfdf3;
+  color: #039855;
+}
+
+.checkout-result-icon.pending {
+  background: var(--brand-50);
+  color: var(--brand-500);
+}
+
+.checkout-result-icon.err {
+  background: #fef3f2;
+  color: #d92d20;
+}
+
+.checkout-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background: var(--gray-50);
+  text-align: left;
+}
+
+.checkout-summary dt {
+  font-size: 0.7rem;
+  color: var(--gray-500);
+}
+
+.checkout-summary dd {
+  margin: 0.15rem 0 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--gray-800);
+}
+
+.checkout-ref-box {
+  border: 1px solid var(--gray-200);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  text-align: left;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.checkout-ref-box > p {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--gray-500);
+}
+
+.checkout-ref-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--gray-800);
+  word-break: break-all;
+}
+
+.form-message.ok {
+  background: #ecfdf3;
+  color: #027a48;
+}
+
+.modal-3ds {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  z-index: 40;
+}
+
+.modal-3ds-card {
+  width: min(100%, 22rem);
+  background: #fff;
+  border-radius: 1rem;
+  padding: 1.25rem;
+  display: grid;
+  gap: 0.75rem;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
+}
+
+.modal-3ds-card h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--gray-800);
+}
+
+.modal-3ds-card > p {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--gray-500);
+  line-height: 1.45;
+}
+
 .login-brand-mobile {
   display: block;
   margin-bottom: 2rem;
