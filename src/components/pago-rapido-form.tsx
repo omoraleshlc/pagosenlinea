@@ -2,20 +2,14 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
-import {
-  CARGOS_PENDIENTES,
-  Cargo,
-  enmascararNombre,
-  fechaCorta,
-  folioValido,
-  mxn,
-} from "@/lib/mock-cargos";
+import { Cargo, fechaCorta, folioValido, mxn } from "@/lib/mock-cargos";
 import { FechaNacimientoPicker } from "./fecha-nacimiento-picker";
 
 type Resultado = {
   paciente: string;
   cargos: Cargo[];
   total: number;
+  folio: string;
 };
 
 function fechaMxValida(value: string) {
@@ -40,40 +34,56 @@ export function PagoRapidoForm() {
   const [intento, setIntento] = useState(false);
   const [buscando, setBuscando] = useState(false);
   const [resultado, setResultado] = useState<Resultado | null>(null);
-  const [noEncontrado, setNoEncontrado] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pagoMsg, setPagoMsg] = useState<string | null>(null);
 
   const folioOk = folioValido(folio);
   const nacimientoOk = fechaMxValida(nacimiento);
 
-  function buscar(event: FormEvent) {
+  async function buscar(event: FormEvent) {
     event.preventDefault();
     setIntento(true);
-    setNoEncontrado(false);
+    setErrorMsg(null);
     setResultado(null);
     setPagoMsg(null);
     if (!folioOk || !nacimientoOk) return;
 
     setBuscando(true);
-    window.setTimeout(() => {
-      const key = folio.trim().toUpperCase();
-      const cargos = CARGOS_PENDIENTES.filter((c) => c.folio === key);
-      setBuscando(false);
-      if (!cargos.length) {
-        setNoEncontrado(true);
+    try {
+      const res = await fetch("/api/pago-rapido/buscar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          folio: folio.trim().toUpperCase(),
+          nacimiento,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setErrorMsg(
+          data.message ||
+            "No encontramos cargos pendientes con esos datos. Verifica el folio o acude a caja.",
+        );
         return;
       }
       setResultado({
-        paciente: enmascararNombre(cargos[0].paciente.toUpperCase()),
-        cargos,
-        total: cargos.reduce((s, c) => s + c.monto, 0),
+        folio: data.folio,
+        paciente: data.paciente,
+        cargos: data.cargos,
+        total: data.total,
       });
-    }, 600);
+    } catch {
+      setErrorMsg(
+        "No pudimos consultar el folio en este momento. Intenta de nuevo.",
+      );
+    } finally {
+      setBuscando(false);
+    }
   }
 
   function limpiar() {
     setResultado(null);
-    setNoEncontrado(false);
+    setErrorMsg(null);
     setIntento(false);
     setPagoMsg(null);
   }
@@ -84,7 +94,7 @@ export function PagoRapidoForm() {
         <div className="cuenta-card">
           <div className="cuenta-card-head">
             <p className="cuenta-meta">
-              Cuenta {folio.trim().toUpperCase()} · Paciente
+              Cuenta {resultado.folio} · Paciente
             </p>
             <p className="cuenta-paciente">{resultado.paciente}</p>
           </div>
@@ -110,7 +120,7 @@ export function PagoRapidoForm() {
           className="btn-primary btn-block"
           onClick={() =>
             setPagoMsg(
-              "El cobro en línea se habilitará cuando se conecte el procesador de pagos. Tus cargos de demostración ya están listos.",
+              "El cobro en línea se habilitará cuando se conecte el procesador de pagos. Tus cargos ya están verificados.",
             )
           }
         >
@@ -135,7 +145,7 @@ export function PagoRapidoForm() {
   return (
     <form className="login-form" noValidate onSubmit={buscar}>
       <label className="field">
-        <span>Folio de cuenta</span>
+        <span>Folio de cuenta o venta</span>
         <input
           value={folio}
           onChange={(e) => setFolio(e.target.value.toUpperCase())}
@@ -146,12 +156,11 @@ export function PagoRapidoForm() {
         />
         {intento && !folioOk ? (
           <span className="field-error">
-            El folio empieza con E, I o H y lleva 7 números.
+            El folio de cuenta o venta empieza con E, I o H y lleva 7 números.
           </span>
         ) : (
           <span className="field-hint">
-            Lo encuentras en tu ticket o recibo. Demostración:{" "}
-            <span className="mono">E4068527</span>.
+            Lo encuentras en tu ticket o recibo (folio de cuenta/venta SIMA).
           </span>
         )}
       </label>
@@ -166,7 +175,7 @@ export function PagoRapidoForm() {
         />
         {intento && !nacimientoOk ? (
           <span className="field-error">
-            Elige o escribe la fecha como dd/mm/aaaa (ejemplo: 15/03/1988).
+            Elige o escribe la fecha como dd/mm/aaaa (ejemplo: 08/06/1975).
           </span>
         ) : (
           <span id="nacimiento-hint" className="field-hint">
@@ -176,10 +185,9 @@ export function PagoRapidoForm() {
         )}
       </label>
 
-      {noEncontrado ? (
+      {errorMsg ? (
         <p className="form-error" role="alert">
-          No encontramos cargos pendientes con esos datos. Verifica el folio o
-          acude a caja.
+          {errorMsg}
         </p>
       ) : null}
 
