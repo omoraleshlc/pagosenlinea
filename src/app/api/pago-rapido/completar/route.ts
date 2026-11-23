@@ -8,7 +8,10 @@ import {
   guardarPagoCompletado,
   marcarReciboEnviado,
 } from "@/lib/pagos-db";
-import { generarReciboCajaPdf } from "@/lib/recibo-pdf";
+import {
+  descripcionLineaAbonoSima,
+  generarReciboCajaPdf,
+} from "@/lib/recibo-pdf";
 import { verificarFolioCuenta } from "@/lib/sima-folio";
 
 export const runtime = "nodejs";
@@ -78,7 +81,13 @@ export async function POST(req: NextRequest) {
   const reciboNum = String(900000 + randomInt(99999));
   const lineas = cuenta.cargos.map((c) => ({
     cantidad: 1,
-    descripcion: c.concepto,
+    descripcion: descripcionLineaAbonoSima({
+      concepto: c.concepto,
+      folio: cuenta.folio,
+      metodo: "tarjeta",
+      metodoLabel,
+      autorizacion,
+    }),
     importe: c.monto,
   }));
 

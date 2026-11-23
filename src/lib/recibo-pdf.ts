@@ -20,6 +20,58 @@ export type ReciboData = {
   fecha?: Date;
 };
 
+export type FormaPagoPortal = "tarjeta" | "spei" | "tienda";
+
+/** SIMA CFormaPago-style label for the Descripción column. */
+export function formaPagoDescripcion(
+  metodo: FormaPagoPortal | string,
+): string {
+  switch (metodo) {
+    case "tarjeta":
+      return "Tarjeta de Crédito";
+    case "spei":
+      return "Transferencia";
+    case "tienda":
+      return "OXXO";
+    default:
+      return String(metodo || "Abono").trim() || "Abono";
+  }
+}
+
+/**
+ * Match SIMA caja `PacienteTransaccionVentaDetalle.descripcion` + V3 PDF:
+ * card → `{concepto} Tarjeta de Crédito / U.Digitos: #### Aut: …`
+ * other → `{concepto} {formaPago}`
+ * E folio abono → prefix `Abono a Cuenta / `
+ */
+export function descripcionLineaAbonoSima(opts: {
+  concepto: string;
+  folio: string;
+  metodo: FormaPagoPortal | string;
+  metodoLabel?: string;
+  autorizacion?: string;
+}): string {
+  const concepto = String(opts.concepto || "").trim() || "Abono";
+  const forma = formaPagoDescripcion(opts.metodo);
+  let detalle: string;
+
+  if (opts.metodo === "tarjeta") {
+    const digits =
+      String(opts.metodoLabel || "").match(/(\d{4})\s*$/)?.[1] || "0000";
+    const aut = String(opts.autorizacion || "").trim();
+    detalle = `${concepto} ${forma} / U.Digitos: ${digits}${
+      aut ? ` Aut: ${aut}` : ""
+    }`;
+  } else {
+    detalle = `${concepto} ${forma}`;
+  }
+
+  if (/E/i.test(opts.folio)) {
+    return `Abono a Cuenta / ${detalle}`;
+  }
+  return detalle;
+}
+
 function mxn(n: number) {
   return new Intl.NumberFormat("es-MX", {
     style: "currency",
