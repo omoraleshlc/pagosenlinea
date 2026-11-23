@@ -189,39 +189,52 @@ export async function verificarFolioCuenta(params: {
         .filter(Boolean)
         .join(" ") || String(pac.nombre_completo || "PACIENTE");
 
-    // Pending / open-ish charges for guest pay (particular share)
-    const [cargoRows] = await pool.query<RowDataPacket[]>(
-      `SELECT keyCAP,
-              IFNULL(NULLIF(TRIM(descripcion), ''), 'Cargo pendiente') AS concepto,
-              IFNULL(gpoProducto, '') AS detalle,
-              ROUND(IFNULL(cantidadParticular, 0), 2) AS monto,
-              DATE(CURDATE() + INTERVAL 10 DAY) AS vence
-       FROM simaactual.cargosCuentaPaciente
-       WHERE (folio = ? OR folioVenta = ?)
-         AND IFNULL(cantidadParticular, 0) > 0
-         AND LOWER(IFNULL(statusCuenta, '')) NOT IN ('cerrada', 'cancelada')
+    const conceptoExpr = `IFNULL(NULLIF(TRIM(descripcionArticulo), ''), IFNULL(NULLIF(TRIM(descripcion), ''), 'Cargo pendiente'))`;
+    const openStatus = `
+         LOWER(IFNULL(statusCuenta, '')) NOT IN ('cerrada', 'cancelada')
          AND (
            LOWER(IFNULL(status, '')) IN ('cxc', 'abierta', 'abierto', 'activo', 'pendiente', 'caja')
            OR LOWER(IFNULL(statusCaja, '')) IN ('standby', 'pendiente', 'abierta', 'por pagar')
            OR LOWER(IFNULL(statusCuenta, '')) IN ('abierta', 'abierto', 'activa', 'caja', '')
-         )
+         )`;
+
+    // Pending particular service charges (existing account income / cargos)
+    const [cargoRows] = await pool.query<RowDataPacket[]>(
+      `SELECT keyCAP,
+              ${conceptoExpr} AS concepto,
+              IFNULL(gpoProducto, '') AS detalle,
+              ROUND(IFNULL(cantidadParticular, 0), 2) AS monto,
+              DATE(CURDATE() + INTERVAL 10 DAY) AS vence,
+              IFNULL(gpoProducto, '') AS gpoProducto,
+              IFNULL(naturaleza, 'C') AS naturaleza
+       FROM simaactual.cargosCuentaPaciente
+       WHERE (folio = ? OR folioVenta = ?)
+         AND IFNULL(naturaleza, 'C') = 'C'
+         AND IFNULL(cantidadParticular, 0) > 0
+         AND LOWER(CONCAT_WS(' ', descripcion, descripcionArticulo))
+             NOT REGEXP 'coaseg|deducib|copago|pago de deducible|pago de coaseguro'
+         AND ${openStatus}
        ORDER BY keyCAP
        LIMIT 50`,
       [folio, folio],
     );
 
-    // Fallback: if status filters miss (schema variance), still show particular > 0 not closed
     let rows = cargoRows;
     if (!rows.length) {
       const [fallback] = await pool.query<RowDataPacket[]>(
         `SELECT keyCAP,
-                IFNULL(NULLIF(TRIM(descripcion), ''), 'Cargo pendiente') AS concepto,
+                ${conceptoExpr} AS concepto,
                 IFNULL(gpoProducto, '') AS detalle,
                 ROUND(IFNULL(cantidadParticular, 0), 2) AS monto,
-                DATE(CURDATE() + INTERVAL 10 DAY) AS vence
+                DATE(CURDATE() + INTERVAL 10 DAY) AS vence,
+                IFNULL(gpoProducto, '') AS gpoProducto,
+                IFNULL(naturaleza, 'C') AS naturaleza
          FROM simaactual.cargosCuentaPaciente
          WHERE (folio = ? OR folioVenta = ?)
+           AND IFNULL(naturaleza, 'C') = 'C'
            AND IFNULL(cantidadParticular, 0) > 0
+           AND LOWER(CONCAT_WS(' ', descripcion, descripcionArticulo))
+               NOT REGEXP 'coaseg|deducib|copago|pago de deducible|pago de coaseguro'
            AND LOWER(IFNULL(statusCuenta, '')) NOT IN ('cerrada', 'cancelada')
            AND LOWER(IFNULL(statusCaja, '')) NOT IN ('pagado', 'cerrada')
          ORDER BY keyCAP
@@ -231,7 +244,116 @@ export async function verificarFolioCuenta(params: {
       rows = fallback;
     }
 
-    if (!rows.length) {
+    // Posted coaseguro / deducible / copago charges minus matching ingresos (abonos)
+    const [coaChargeRows] = await pool.query<RowDataPacket[]>(
+      `SELECT keyCAP,
+              ${conceptoExpr} AS concepto,
+              IFNULL(gpoProducto, '') AS detalle,
+              ROUND(IFNULL(cantidadParticular, 0), 2) AS monto,
+              DATE(CURDATE() + INTERVAL 10 DAY) AS vence
+       FROM simaactual.cargosCuentaPaciente
+       WHERE (folio = ? OR folioVenta = ?)
+         AND IFNULL(naturaleza, 'C') = 'C'
+         AND IFNULL(cantidadParticular, 0) > 0
+         AND LOWER(CONCAT_WS(' ', descripcion, descripcionArticulo))
+             REGEXP 'coaseg|deducib|copago'
+         AND LOWER(IFNULL(statusCaja, '')) NOT IN ('pagado')
+         AND LOWER(IFNULL(statusCuenta, '')) NOT IN ('cancelada')
+       ORDER BY keyCAP
+       LIMIT 20`,
+      [folio, folio],
+    );
+    const [coaAbonoRows] = await pool.query<RowDataPacket[]>(
+      `SELECT ROUND(SUM(IFNULL(cantidadParticular, 0)), 2) AS abonado
+       FROM simaactual.cargosCuentaPaciente
+       WHERE (folio = ? OR folioVenta = ?)
+         AND IFNULL(naturaleza, 'C') = 'A'
+         AND LOWER(CONCAT_WS(' ', descripcion, descripcionArticulo))
+             REGEXP 'coaseg|deducib|copago|pago de deducible|pago de coaseguro|pago compartido'`,
+      [folio, folio],
+    );
+    const coaAbonado = Number(coaAbonoRows[0]?.abonado || 0);
+    let coaCargos: FolioCargo[] = coaChargeRows.map((r) => ({
+      id: String(r.keyCAP),
+      folio,
+      concepto: String(r.concepto),
+      detalle: String(r.detalle || "coaseguro"),
+      monto: Number(r.monto),
+      vence: String(r.vence).slice(0, 10),
+    }));
+    if (coaAbonado > 0 && coaCargos.length) {
+      let rest = coaAbonado;
+      coaCargos = coaCargos
+        .map((c) => {
+          if (rest <= 0) return c;
+          const take = Math.min(c.monto, rest);
+          rest -= take;
+          return { ...c, monto: Math.round((c.monto - take) * 100) / 100 };
+        })
+        .filter((c) => c.monto > 0);
+    }
+
+    // If account has coaseguro-capable product groups but no posted coa/ded/copago,
+    // caja still collects a flat 100 MXN on top of existing particular ingresos.
+    const gpos = [
+      ...new Set(
+        rows
+          .map((r) => String(r.gpoProducto || "").trim())
+          .filter(Boolean),
+      ),
+    ];
+    let needsFlatCoa = false;
+    if (!coaCargos.length && gpos.length) {
+      const [gpoRows] = await pool.query<RowDataPacket[]>(
+        `SELECT codigoGP, IFNULL(coaseguro, '') AS coaseguro
+         FROM simaactual.gpoProductos
+         WHERE codigoGP IN (${gpos.map(() => "?").join(",")})`,
+        gpos,
+      );
+      needsFlatCoa = gpoRows.some(
+        (g) => String(g.coaseguro || "").toLowerCase() === "si",
+      );
+    } else if (!coaCargos.length && rows.length) {
+      // no gpo on rows — still check joined cargo gpos via folio
+      const [flagRows] = await pool.query<RowDataPacket[]>(
+        `SELECT COUNT(*) AS n
+         FROM simaactual.cargosCuentaPaciente c
+         JOIN simaactual.gpoProductos g ON g.codigoGP = c.gpoProducto
+         WHERE (c.folio = ? OR c.folioVenta = ?)
+           AND LOWER(IFNULL(g.coaseguro, '')) = 'si'
+           AND IFNULL(c.naturaleza, 'C') = 'C'`,
+        [folio, folio],
+      );
+      needsFlatCoa = Number(flagRows[0]?.n || 0) > 0;
+    }
+
+    if (needsFlatCoa && coaAbonado < 100) {
+      const monto = Math.round((100 - coaAbonado) * 100) / 100;
+      if (monto > 0) {
+        coaCargos.push({
+          id: `coa-${folio}`,
+          folio,
+          concepto: "Coaseguro / deducible / copago",
+          detalle: "Pendiente de registrar en caja",
+          monto,
+          vence: toIsoDate(new Date(Date.now() + 10 * 86400000)),
+        });
+      }
+    }
+
+    const cargos: FolioCargo[] = [
+      ...rows.map((r) => ({
+        id: String(r.keyCAP),
+        folio,
+        concepto: String(r.concepto),
+        detalle: String(r.detalle || ""),
+        monto: Number(r.monto),
+        vence: String(r.vence).slice(0, 10),
+      })),
+      ...coaCargos,
+    ];
+
+    if (!cargos.length) {
       return {
         ok: false,
         code: "no_charges",
@@ -240,15 +362,7 @@ export async function verificarFolioCuenta(params: {
       };
     }
 
-    const cargos: FolioCargo[] = rows.map((r) => ({
-      id: String(r.keyCAP),
-      folio,
-      concepto: String(r.concepto),
-      detalle: String(r.detalle || ""),
-      monto: Number(r.monto),
-      vence: String(r.vence).slice(0, 10),
-    }));
-    const total = cargos.reduce((s, c) => s + c.monto, 0);
+    const total = Math.round(cargos.reduce((s, c) => s + c.monto, 0) * 100) / 100;
 
     return {
       ok: true,
