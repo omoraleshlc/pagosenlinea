@@ -47,6 +47,17 @@ export async function POST(req: NextRequest) {
 
   const data = await consultarPagoMp(paymentId);
   if (!data) {
+    // Acknowledge receipt even if live GET is blocked for this token
+    // (personal MP accounts often create payments but cannot read them).
+    const existing = await leerPagoPorMpId(paymentId).catch(() => null);
+    if (existing) {
+      return NextResponse.json({
+        ok: true,
+        paymentId,
+        status: existing.status,
+        warning: "mp_get_unauthorized",
+      });
+    }
     return NextResponse.json({ ok: false }, { status: 502 });
   }
 
