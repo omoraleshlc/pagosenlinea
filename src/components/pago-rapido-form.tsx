@@ -2,7 +2,11 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { DEMO_CARDS, type DemoCard } from "@/lib/demo-cards";
+import {
+  DEMO_CARDS,
+  demoPaymentsEnabled,
+  type DemoCard,
+} from "@/lib/demo-cards";
 import { Cargo, fechaCorta, folioValido, mxn } from "@/lib/mock-cargos";
 import { FechaNacimientoPicker } from "./fecha-nacimiento-picker";
 
@@ -114,6 +118,7 @@ export function PagoRapidoForm() {
   } | null>(null);
   const [copiado, setCopiado] = useState(false);
   const [cancelando, setCancelando] = useState(false);
+  const demoPagos = demoPaymentsEnabled();
 
   const folioOk = folioValido(folio);
   const nacimientoOk = fechaMxValida(nacimiento);
@@ -305,6 +310,13 @@ export function PagoRapidoForm() {
     if (!puedeConfirmar || procesando || !resultado) return;
     if (metodo === "spei" || metodo === "tienda") {
       void pagarConReferencia();
+      return;
+    }
+    if (!demoPagos) {
+      rechazar(
+        "Pagos con tarjeta aún no están activos",
+        "El modo demo está apagado. Conecta el procesador real (p. ej. Conekta) antes de cobrar en producción.",
+      );
       return;
     }
     setProcesando(true);
@@ -699,27 +711,29 @@ export function PagoRapidoForm() {
 
         {metodo === "tarjeta" ? (
           <div className="tarjeta-fields">
-            <div className="demo-cards" aria-label="Tarjetas de prueba">
-              <p className="field-hint" style={{ margin: 0 }}>
-                Tarjetas ficticias (solo desarrollo — no se cobra nada):
-              </p>
-              <div className="demo-cards-list">
-                {DEMO_CARDS.map((card) => (
-                  <button
-                    key={card.id}
-                    type="button"
-                    className="demo-card-btn"
-                    title={card.hint}
-                    onClick={() => aplicarTarjetaDemo(card)}
-                  >
-                    <span className="demo-card-label">{card.label}</span>
-                    <span className="demo-card-num mono">
-                      ···· {card.numero.replace(/\D/g, "").slice(-4)}
-                    </span>
-                  </button>
-                ))}
+            {demoPagos ? (
+              <div className="demo-cards" aria-label="Tarjetas de prueba">
+                <p className="field-hint" style={{ margin: 0 }}>
+                  Tarjetas ficticias (solo desarrollo — no se cobra nada):
+                </p>
+                <div className="demo-cards-list">
+                  {DEMO_CARDS.map((card) => (
+                    <button
+                      key={card.id}
+                      type="button"
+                      className="demo-card-btn"
+                      title={card.hint}
+                      onClick={() => aplicarTarjetaDemo(card)}
+                    >
+                      <span className="demo-card-label">{card.label}</span>
+                      <span className="demo-card-num mono">
+                        ···· {card.numero.replace(/\D/g, "").slice(-4)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : null}
             <label className="field">
               <span>Número de tarjeta</span>
               <div className="tarjeta-numero-wrap">
@@ -775,10 +789,17 @@ export function PagoRapidoForm() {
                 />
               </label>
             </div>
-            <p className="field-hint">
-              Éxito: 4242… + código 3DS ≠ 000000. Rechazo: …0002. Vencida:
-              …0069. Fallo 3DS: escribe 000000 tres veces.
-            </p>
+            {demoPagos ? (
+              <p className="field-hint">
+                Éxito: 4242… + código 3DS ≠ 000000. Rechazo: …0002. Vencida:
+                …0069. Fallo 3DS: escribe 000000 tres veces. Apaga con
+                NEXT_PUBLIC_DEMO_PAYMENTS=false al pasar a producción.
+              </p>
+            ) : (
+              <p className="field-hint">
+                Modo demo apagado. Conecta el procesador real antes de cobrar.
+              </p>
+            )}
           </div>
         ) : (
           <p className="info-note">

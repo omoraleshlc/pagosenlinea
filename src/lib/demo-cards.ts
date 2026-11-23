@@ -1,4 +1,13 @@
-/** Fictional cards for LAN / pre-prod checkout demos. Not charged. */
+/**
+ * Fictional cards for LAN / pre-prod checkout demos. Not charged.
+ *
+ * Production leap: set NEXT_PUBLIC_DEMO_PAYMENTS=false (and wire a real
+ * card processor). One env flip hides the buttons and disables fake 3DS.
+ */
+export function demoPaymentsEnabled() {
+  const flag = (process.env.NEXT_PUBLIC_DEMO_PAYMENTS || "true").toLowerCase();
+  return !(flag === "false" || flag === "0" || flag === "off");
+}
 
 export type DemoCard = {
   id: string;
