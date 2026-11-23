@@ -23,7 +23,10 @@ type PagoOk = {
   metodoLabel: string;
   autorizacion?: string;
   referencia?: string;
+  banco?: string;
+  ticketUrl?: string;
   email: string;
+  provider?: "demo" | "mercadopago";
 };
 
 const METODOS: {
@@ -71,11 +74,6 @@ function fechaMxValida(value: string) {
 function folioPagoNuevo() {
   const n = Math.floor(100000 + Math.random() * 900000);
   return `PEL${n}`;
-}
-
-function clabeDemo(folio: string) {
-  const digits = folio.replace(/\D/g, "").padEnd(10, "0").slice(0, 10);
-  return `6461801578${digits}`.slice(0, 18);
 }
 
 export function PagoRapidoForm() {
@@ -211,25 +209,19 @@ export function PagoRapidoForm() {
     }));
   }
 
-  function terminarPago(estado: PagoOk["estado"]) {
+  function terminarPagoDemo(estado: PagoOk["estado"]) {
     if (!resultado) return;
-    const folioPago = folioPagoNuevo();
     setPagoOk({
       estado,
-      folioPago,
+      folioPago: folioPagoNuevo(),
       monto: resultado.total,
       metodoLabel,
       email: email.trim(),
+      provider: "demo",
       autorizacion:
         estado === "Pagado"
           ? String(100000 + Math.floor(Math.random() * 900000))
           : undefined,
-      referencia:
-        estado === "Pagado"
-          ? undefined
-          : metodo === "spei"
-            ? clabeDemo(resultado.folio)
-            : `OX${resultado.folio.replace(/\D/g, "").slice(-10)}`,
     });
     setPaso("resultado");
   }
@@ -244,34 +236,80 @@ export function PagoRapidoForm() {
     setPaso("fallo");
   }
 
+  async function pagarConReferencia() {
+    if (!resultado) return;
+    setProcesando(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch("/api/pago-rapido/iniciar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          folio: resultado.folio,
+          nacimiento,
+          metodo,
+          email: email.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        rechazar(
+          "No pudimos generar la referencia",
+          data.message ||
+            "Intenta de nuevo o usa otro método de pago.",
+        );
+        return;
+      }
+      setPagoOk({
+        estado: data.pago.estado,
+        folioPago: data.pago.folioPago,
+        monto: data.pago.monto,
+        metodoLabel: data.pago.metodoLabel,
+        referencia: data.pago.referencia,
+        banco: data.pago.banco,
+        ticketUrl: data.pago.ticketUrl,
+        email: data.pago.email,
+        provider: "mercadopago",
+      });
+      setPaso("resultado");
+    } catch {
+      rechazar(
+        "No pudimos conectar con el cobro",
+        "Revisa tu conexión e intenta de nuevo.",
+      );
+    } finally {
+      setProcesando(false);
+    }
+  }
+
   function pagar() {
     if (!puedeConfirmar || procesando || !resultado) return;
+    if (metodo === "spei" || metodo === "tienda") {
+      void pagarConReferencia();
+      return;
+    }
     setProcesando(true);
     window.setTimeout(() => {
       setProcesando(false);
-      if (metodo === "tarjeta") {
-        const final = digitos.slice(-4);
-        if (final === "0002") {
-          rechazar(
-            "Tu banco rechazó el pago",
-            "Fondos insuficientes o la tarjeta no está habilitada para compras en línea.",
-          );
-          return;
-        }
-        if (final === "0069") {
-          rechazar(
-            "Tu tarjeta está vencida",
-            "La fecha de vencimiento ya pasó. Revisa los datos o usa otra tarjeta.",
-          );
-          return;
-        }
-        setCodigo3ds("");
-        setError3ds("");
-        setIntentos3ds(0);
-        setTresDS(true);
+      const final = digitos.slice(-4);
+      if (final === "0002") {
+        rechazar(
+          "Tu banco rechazó el pago",
+          "Fondos insuficientes o la tarjeta no está habilitada para compras en línea.",
+        );
         return;
       }
-      terminarPago(metodo === "spei" ? "En revisión" : "Pendiente");
+      if (final === "0069") {
+        rechazar(
+          "Tu tarjeta está vencida",
+          "La fecha de vencimiento ya pasó. Revisa los datos o usa otra tarjeta.",
+        );
+        return;
+      }
+      setCodigo3ds("");
+      setError3ds("");
+      setIntentos3ds(0);
+      setTresDS(true);
     }, 900);
   }
 
@@ -299,7 +337,7 @@ export function PagoRapidoForm() {
     setProcesando(true);
     window.setTimeout(() => {
       setProcesando(false);
-      terminarPago("Pagado");
+      terminarPagoDemo("Pagado");
     }, 700);
   }
 
@@ -363,10 +401,15 @@ export function PagoRapidoForm() {
           {pagoOk.estado !== "Pagado" && pagoOk.referencia ? (
             <div className="checkout-ref-box">
               <p>
-                {metodo === "spei"
+                {pagoOk.metodoLabel === "SPEI"
                   ? "Transfiere el monto exacto a esta CLABE:"
-                  : "Muestra esta referencia en caja de tienda:"}
+                  : "Muestra esta referencia en caja OXXO:"}
               </p>
+              {pagoOk.banco ? (
+                <p className="field-hint" style={{ margin: 0 }}>
+                  {pagoOk.banco}
+                </p>
+              ) : null}
               <p className="mono checkout-ref-value">{pagoOk.referencia}</p>
               <button
                 type="button"
@@ -375,11 +418,23 @@ export function PagoRapidoForm() {
               >
                 {copiado ? "Copiado" : "Copiar referencia"}
               </button>
+              {pagoOk.ticketUrl ? (
+                <a
+                  className="btn-primary btn-block"
+                  href={pagoOk.ticketUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ textAlign: "center", textDecoration: "none" }}
+                >
+                  Ver instrucciones de pago
+                </a>
+              ) : null}
             </div>
           ) : null}
           <p className="field-hint">
-            Demostración del flujo de cobro. Cuando Conekta quede conectado, este
-            paso acreditará el pago real y lo aplicará en SIMA.
+            {pagoOk.provider === "mercadopago"
+              ? "Referencia real de Mercado Pago (servidor LAN / pagosenlinea.sshlc.org). Aún no se aplica automáticamente en SIMA."
+              : "Demostración de tarjeta. SPEI y OXXO usan Mercado Pago en este servidor de desarrollo."}
           </p>
           <button type="button" className="btn-primary btn-block" onClick={limpiar}>
             Pagar otro folio
@@ -530,8 +585,8 @@ export function PagoRapidoForm() {
         ) : (
           <p className="info-note">
             {metodo === "spei"
-              ? "Al confirmar te damos la CLABE y el monto exacto para transferir."
-              : "Al confirmar te damos la referencia para pagar en OXXO."}
+              ? "Al confirmar generamos una CLABE real (Mercado Pago / SPEI) para transferir el monto exacto."
+              : "Al confirmar generamos una referencia OXXO real (Mercado Pago) para pagar en tienda."}
           </p>
         )}
 
