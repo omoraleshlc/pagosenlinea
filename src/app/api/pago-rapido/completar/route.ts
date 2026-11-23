@@ -79,17 +79,14 @@ export async function POST(req: NextRequest) {
   }
 
   const reciboNum = String(900000 + randomInt(99999));
-  const lineas = cuenta.cargos.map((c) => ({
-    cantidad: 1,
-    descripcion: descripcionLineaAbonoSima({
-      concepto: c.concepto,
-      folio: cuenta.folio,
-      metodo: "tarjeta",
-      metodoLabel,
-      autorizacion,
-    }),
-    importe: c.monto,
-  }));
+  // SIMA recibo credit line = PTV forma_pago label only (not cargo conceptos).
+  const lineas = [
+    {
+      cantidad: 1,
+      descripcion: descripcionLineaAbonoSima({ metodo: "tarjeta" }),
+      importe: cuenta.total,
+    },
+  ];
 
   let pdf: Buffer;
   try {

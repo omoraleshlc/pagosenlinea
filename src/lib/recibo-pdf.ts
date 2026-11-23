@@ -22,54 +22,35 @@ export type ReciboData = {
 
 export type FormaPagoPortal = "tarjeta" | "spei" | "tienda";
 
-/** SIMA CFormaPago-style label for the Descripción column. */
+/**
+ * Label for the PDF Descripción column — same text SIMA prints from
+ * `paciente_transaccion_venta.forma_pago` → `sima_sat.c_forma_pago.descripcion`
+ * (PDFformat V3 uses cFormaPago.getDescripcion() when there is no detalle).
+ */
 export function formaPagoDescripcion(
   metodo: FormaPagoPortal | string,
 ): string {
   switch (metodo) {
     case "tarjeta":
-      return "Tarjeta de Crédito";
+      return "Tarjeta de crédito"; // forma_pago 04
     case "spei":
-      return "Transferencia";
+      return "Transferencia electrónica de fondos"; // forma_pago 03
     case "tienda":
-      return "OXXO";
+      return "Efectivo"; // closest SAT/caja label for OXXO (01)
     default:
       return String(metodo || "Abono").trim() || "Abono";
   }
 }
 
-/**
- * Match SIMA caja `PacienteTransaccionVentaDetalle.descripcion` + V3 PDF:
- * card → `{concepto} Tarjeta de Crédito / U.Digitos: #### Aut: …`
- * other → `{concepto} {formaPago}`
- * E folio abono → prefix `Abono a Cuenta / `
- */
+/** Single abono line description = type of payment only (PTV forma_pago). */
 export function descripcionLineaAbonoSima(opts: {
-  concepto: string;
-  folio: string;
   metodo: FormaPagoPortal | string;
+  concepto?: string;
+  folio?: string;
   metodoLabel?: string;
   autorizacion?: string;
 }): string {
-  const concepto = String(opts.concepto || "").trim() || "Abono";
-  const forma = formaPagoDescripcion(opts.metodo);
-  let detalle: string;
-
-  if (opts.metodo === "tarjeta") {
-    const digits =
-      String(opts.metodoLabel || "").match(/(\d{4})\s*$/)?.[1] || "0000";
-    const aut = String(opts.autorizacion || "").trim();
-    detalle = `${concepto} ${forma} / U.Digitos: ${digits}${
-      aut ? ` Aut: ${aut}` : ""
-    }`;
-  } else {
-    detalle = `${concepto} ${forma}`;
-  }
-
-  if (/E/i.test(opts.folio)) {
-    return `Abono a Cuenta / ${detalle}`;
-  }
-  return detalle;
+  return formaPagoDescripcion(opts.metodo);
 }
 
 function mxn(n: number) {
