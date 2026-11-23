@@ -1,15 +1,10 @@
 import type { Metadata } from "next";
-import { Figtree, Fraunces } from "next/font/google";
+import { Outfit } from "next/font/google";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
-const figtree = Figtree({
-  variable: "--font-figtree",
-  subsets: ["latin"],
-});
-
-const fraunces = Fraunces({
-  variable: "--font-fraunces",
+const outfit = Outfit({
+  variable: "--font-outfit",
   subsets: ["latin"],
 });
 
@@ -25,7 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className={`${figtree.variable} ${fraunces.variable} antialiased`}>
+      <body className={`${outfit.variable} antialiased`}>
         <Providers>{children}</Providers>
       </body>
     </html>

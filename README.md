@@ -6,6 +6,10 @@ Next.js (App Router) + TypeScript login portal for online payments.
 This repository is **independent of SIMA**. No shared SIMA packages, monorepo merge, or hard dependencies. SIMA may be used only as a visual/UX reference.
 
 
+
+## UI reference
+
+Login layout follows the existing **sima_template / pagos AuthLayout** (TailAdmin): Hospital La Carlota logos under `public/images/brand/`, brand blue `#214690`, form left / brand panel right. Visual reference only — no SIMA runtime coupling.
 ## URLs
 
 | Role | URL |
