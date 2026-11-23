@@ -26,9 +26,24 @@ type PagoOk = {
   referencia?: string;
   banco?: string;
   ticketUrl?: string;
+  vence?: string;
   email: string;
   provider?: "demo" | "mercadopago";
 };
+
+function fechaVenceMx(iso?: string) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Monterrey",
+  }).format(d);
+}
 
 const METODOS: {
   id: Metodo;
@@ -271,6 +286,7 @@ export function PagoRapidoForm() {
         referencia: data.pago.referencia,
         banco: data.pago.banco,
         ticketUrl: data.pago.ticketUrl,
+        vence: data.pago.vence,
         email: data.pago.email,
         provider: "mercadopago",
       });
@@ -359,12 +375,12 @@ export function PagoRapidoForm() {
     pagoOk.provider === "mercadopago" &&
     (pagoOk.estado === "En revisión" || pagoOk.estado === "Pendiente");
 
-  async function cancelarPagoPendiente(opts?: { salir?: boolean }) {
+  async function cancelarPagoPendiente(next?: "metodo" | "cuenta") {
     if (!pagoOk?.paymentId || !pendienteMp || cancelando) return;
     const ok = window.confirm(
-      opts?.salir
-        ? "Vas a salir sin pagar. ¿Cancelamos la referencia SPEI/OXXO para que ya no se pueda cobrar?"
-        : "¿Cancelar este pago? La CLABE o referencia OXXO dejará de funcionar y podrás generar otra después.",
+      next === "metodo"
+        ? "Vas a elegir otro medio de pago. Cancelaremos esta referencia para que no quede un cobro abierto."
+        : "¿Cancelar el pago? La referencia dejará de ser válida y no se cobrará nada.",
     );
     if (!ok) return;
     setCancelando(true);
@@ -378,19 +394,25 @@ export function PagoRapidoForm() {
       if (!data.ok) {
         window.alert(
           data.message ||
-            "No pudimos cancelar la referencia. Intenta de nuevo o acude a caja.",
+            "No pudimos cancelar el pago. Intenta de nuevo o acude a caja.",
         );
+        return;
+      }
+      if (next === "metodo") {
+        setPagoOk(null);
+        setPaso("metodo");
+        return;
+      }
+      if (next === "cuenta") {
+        setPagoOk(null);
+        setPaso("cuenta");
         return;
       }
       setPagoOk((prev) =>
         prev ? { ...prev, estado: "Cancelado", ticketUrl: undefined } : prev,
       );
-      if (opts?.salir) {
-        setPaso("cuenta");
-        setPagoOk(null);
-      }
     } catch {
-      window.alert("No pudimos cancelar la referencia. Intenta de nuevo.");
+      window.alert("No pudimos cancelar el pago. Intenta de nuevo.");
     } finally {
       setCancelando(false);
     }
@@ -457,21 +479,23 @@ export function PagoRapidoForm() {
           </div>
           <h2>
             {pagoOk.estado === "Pagado"
-              ? "¡Pago recibido!"
+              ? "¡Listo, ya recibimos tu pago!"
               : cancelado
-                ? "Pago cancelado"
-                : pagoOk.estado === "En revisión"
-                  ? "Estamos esperando tu transferencia"
-                  : "Referencia generada"}
+                ? "Cancelaste el pago"
+                : pagoOk.metodoLabel === "SPEI"
+                  ? `Paga ${mxn(pagoOk.monto)} por SPEI`
+                  : pagoOk.metodoLabel === "OXXO"
+                    ? `Paga ${mxn(pagoOk.monto)} en OXXO`
+                    : "Completa tu pago"}
           </h2>
           <p className="checkout-result-copy">
             {pagoOk.estado === "Pagado"
-              ? `Enviamos tu comprobante a ${pagoOk.email}.`
+              ? `Enviamos el comprobante a ${pagoOk.email}.`
               : cancelado
-                ? "La referencia ya no es válida. Tus cargos siguen pendientes; puedes generar otra cuando quieras."
-                : pagoOk.estado === "En revisión"
-                  ? "Se acredita en minutos. Te avisaremos por correo cuando el banco lo confirme."
-                  : "Paga en tienda con la referencia. Se refleja en tu cuenta de 1 a 24 horas."}
+                ? "No se cobró nada. Tus cargos siguen pendientes."
+                : pagoOk.metodoLabel === "SPEI"
+                  ? "Usa la CLABE y el monto exacto. En cuanto se acredite, actualizamos esta pantalla."
+                  : "Lleva la referencia a cualquier OXXO. Cuando paguen, lo veremos aquí."}
           </p>
           <dl className="checkout-summary">
             <div>
@@ -504,7 +528,7 @@ export function PagoRapidoForm() {
               <p>
                 {pagoOk.metodoLabel === "SPEI"
                   ? "Transfiere el monto exacto a esta CLABE:"
-                  : "Muestra esta referencia en caja OXXO:"}
+                  : "Paga en OXXO con esta referencia:"}
               </p>
               {pagoOk.banco ? (
                 <p className="field-hint" style={{ margin: 0 }}>
@@ -512,79 +536,95 @@ export function PagoRapidoForm() {
                 </p>
               ) : null}
               <p className="mono checkout-ref-value">{pagoOk.referencia}</p>
+              {fechaVenceMx(pagoOk.vence) ? (
+                <p className="field-hint" style={{ margin: 0 }}>
+                  Paga antes del {fechaVenceMx(pagoOk.vence)} (hora Monterrey).
+                </p>
+              ) : null}
               <button
                 type="button"
-                className="btn-secondary btn-block"
+                className="btn-primary btn-block"
                 onClick={() => copiarTexto(pagoOk.referencia!)}
               >
-                {copiado ? "Copiado" : "Copiar referencia"}
+                {copiado ? "Listo, copiado" : "Copiar referencia"}
               </button>
               {pagoOk.ticketUrl ? (
                 <a
-                  className="btn-primary btn-block"
+                  className="btn-secondary btn-block"
                   href={pagoOk.ticketUrl}
                   target="_blank"
                   rel="noreferrer"
                   style={{ textAlign: "center", textDecoration: "none" }}
                 >
-                  Ver instrucciones de pago
+                  Ver ticket de pago
                 </a>
               ) : null}
             </div>
           ) : null}
-          <p className="field-hint">
-            {pagoOk.provider === "mercadopago"
-              ? pagoOk.estado === "Pagado"
-                ? "Pago acreditado en Mercado Pago. La aplicación automática en SIMA sigue pendiente."
-                : cancelado
-                  ? "Cancelaste el cobro a tiempo: no se aplicó ningún cargo."
-                  : "Referencia real (CLABE/OXXO). Si cambias de opinión, cancélala para que no quede abierta."
-              : "Demostración de tarjeta. SPEI y OXXO usan Mercado Pago real en este servidor."}
-          </p>
+
           {pendienteMp ? (
-            <button
-              type="button"
-              className="btn-secondary btn-block"
-              disabled={cancelando}
-              onClick={() => void cancelarPagoPendiente()}
-            >
-              {cancelando ? "Cancelando…" : "Cancelar este pago"}
-            </button>
+            <>
+              <p className="form-message">
+                Cuando pagues, confirmamos solo: no cierres ni recargues por
+                fuerza. Si sales de esta pantalla, la referencia sigue vigente
+                hasta su vencimiento.
+              </p>
+              <button
+                type="button"
+                className="btn-secondary btn-block"
+                disabled={cancelando}
+                onClick={() => void cancelarPagoPendiente("metodo")}
+              >
+                {cancelando ? "Cancelando…" : "Elegir otro medio de pago"}
+              </button>
+              <button
+                type="button"
+                className="link-button"
+                disabled={cancelando}
+                onClick={() => void cancelarPagoPendiente()}
+              >
+                Cancelar pago
+              </button>
+            </>
           ) : null}
+
           {cancelado ? (
-            <button
-              type="button"
-              className="btn-primary btn-block"
-              onClick={() => {
-                setPagoOk(null);
-                setPaso("metodo");
-              }}
-            >
-              Generar otra referencia
+            <>
+              <p className="field-hint">
+                No se cobró nada. Puedes elegir otro medio o volver a tu cuenta.
+              </p>
+              <button
+                type="button"
+                className="btn-primary btn-block"
+                onClick={() => {
+                  setPagoOk(null);
+                  setPaso("metodo");
+                }}
+              >
+                Elegir medio de pago
+              </button>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => {
+                  setPagoOk(null);
+                  setPaso("cuenta");
+                }}
+              >
+                Volver a mi cuenta
+              </button>
+            </>
+          ) : null}
+
+          {pagoOk.estado === "Pagado" ? (
+            <button type="button" className="btn-primary btn-block" onClick={limpiar}>
+              Listo
             </button>
           ) : null}
-          <button
-            type="button"
-            className={cancelado ? "btn-secondary btn-block" : "btn-primary btn-block"}
-            disabled={cancelando}
-            onClick={() => {
-              if (pendienteMp) {
-                void cancelarPagoPendiente({ salir: true });
-                return;
-              }
-              limpiar();
-            }}
-          >
-            {pendienteMp ? "Salir y cancelar referencia" : "Pagar otro folio"}
-          </button>
-          {pendienteMp ? (
-            <button
-              type="button"
-              className="link-button"
-              disabled={cancelando}
-              onClick={limpiar}
-            >
-              Salir dejando la referencia activa
+
+          {!pendienteMp && !cancelado && pagoOk.estado !== "Pagado" ? (
+            <button type="button" className="btn-primary btn-block" onClick={limpiar}>
+              Pagar otro folio
             </button>
           ) : null}
         </div>
