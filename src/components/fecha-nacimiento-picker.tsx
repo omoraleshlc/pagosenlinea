@@ -1,5 +1,6 @@
 "use client";
 
+import { forwardRef } from "react";
 import DatePicker, { registerLocale } from "react-datepicker";
 import { es } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
@@ -12,6 +13,14 @@ type FechaNacimientoPickerProps = {
   id?: string;
   "aria-describedby"?: string;
 };
+
+/** Mexico dd/mm/yyyy slash mask while typing. */
+export function formatearFechaMx(raw: string) {
+  const digits = raw.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
 
 function parseFechaMx(value: string): Date | null {
   const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
@@ -38,7 +47,47 @@ function toFechaMx(date: Date | null): string {
   return `${d}/${m}/${y}`;
 }
 
-/** Birth-date picker: calendar + month/year dropdowns, Mexico dd/mm/yyyy. */
+type MaskedInputProps = {
+  displayValue: string;
+  onMaskedChange: (value: string) => void;
+  onClick?: () => void;
+  className?: string;
+  id?: string;
+  "aria-describedby"?: string;
+};
+
+/** Text field with slash masking; DatePicker opens calendar via icon/focus. */
+const MaskedDateInput = forwardRef<HTMLInputElement, MaskedInputProps>(
+  function MaskedDateInput(
+    {
+      displayValue,
+      onMaskedChange,
+      onClick,
+      className,
+      id,
+      "aria-describedby": ariaDescribedBy,
+    },
+    ref,
+  ) {
+    return (
+      <input
+        ref={ref}
+        id={id}
+        className={className}
+        value={displayValue}
+        inputMode="numeric"
+        autoComplete="bday"
+        placeholder="dd/mm/aaaa"
+        maxLength={10}
+        aria-describedby={ariaDescribedBy}
+        onClick={onClick}
+        onChange={(e) => onMaskedChange(formatearFechaMx(e.target.value))}
+      />
+    );
+  },
+);
+
+/** Calendar picker + dd/mm/yyyy typing mask together. */
 export function FechaNacimientoPicker({
   value,
   onChange,
@@ -52,7 +101,6 @@ export function FechaNacimientoPicker({
   return (
     <div className="fecha-picker-wrap">
       <DatePicker
-        id={id}
         locale="es"
         selected={selected}
         onChange={(date: Date | null) => onChange(toFechaMx(date))}
@@ -67,12 +115,17 @@ export function FechaNacimientoPicker({
         scrollableYearDropdown
         showIcon
         toggleCalendarOnIconClick
-        autoComplete="bday"
-        className="fecha-picker-input"
         calendarClassName="fecha-picker-calendar"
-        ariaDescribedBy={ariaDescribedBy}
         isClearable
-        strictParsing
+        customInput={
+          <MaskedDateInput
+            id={id}
+            className="fecha-picker-input"
+            displayValue={value}
+            onMaskedChange={onChange}
+            aria-describedby={ariaDescribedBy}
+          />
+        }
       />
     </div>
   );
