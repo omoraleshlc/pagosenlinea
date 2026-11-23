@@ -16,10 +16,10 @@ Login layout follows the existing **sima_template / pagos AuthLayout** (TailAdmi
 |------|-----|
 | LAN app | http://192.168.1.43:8421 |
 | Health | http://192.168.1.43:8421/healthz → `{ "ok": true }` |
-| Public | https://pagosenlinea.sshlc.org/ |
+| LAN hostname | https://pagosenlinea.sshlc.org/ (pre-prod; `SITE_LAN_ONLY` + `robots.txt` / noindex — not for Google yet) |
 | Login | https://pagosenlinea.sshlc.org/login |
 
-Access to `.43` / internal ports needs the Tunnelblick **Developer** VPN profile.
+Access to `.43` / internal ports needs the Tunnelblick **Developer** VPN profile. Live SPEI/OXXO use `PAYMENTS_LAN_ONLY` + Mercado Pago tokens — that flag does **not** mean “hide the website.”
 
 ## Scripts
 

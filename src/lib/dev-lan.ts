@@ -1,8 +1,10 @@
 import { NextRequest } from "next/server";
 
 /**
- * Developer / LAN portal only (pagosenlinea.sshlc.org on the hospital network).
- * Real SPEI/OXXO stays off unless explicitly enabled and the Host looks local/dev.
+ * Live SPEI/OXXO (Mercado Pago) for the hospital LAN portal.
+ * This is NOT "hide the website from Google" — that is SITE_LAN_ONLY in middleware.
+ * When true (default) and a token is set, real CLABE/OXXO creation is allowed
+ * for Hosts that look like the LAN portal (see requestLooksLikeLanPortal).
  */
 export function paymentsLanEnabled() {
   const flag = (process.env.PAYMENTS_LAN_ONLY || "true").toLowerCase();
