@@ -49,6 +49,7 @@ async function getPool() {
     waitForConnections: true,
     connectionLimit: 4,
     enableKeepAlive: true,
+    connectTimeout: 8000,
     // read-only intent; app must not issue writes
   });
 }
@@ -135,7 +136,7 @@ export async function verificarFolioCuenta(params: {
       `SELECT id_paciente, folioventa, status, tipopaciente, id_expediente,
               nombre_completo
        FROM sima_venta.paciente
-       WHERE UPPER(folioventa) = ?
+       WHERE folioventa = ?
        LIMIT 1`,
       [folio],
     );
@@ -196,7 +197,7 @@ export async function verificarFolioCuenta(params: {
               ROUND(IFNULL(cantidadParticular, 0), 2) AS monto,
               DATE(CURDATE() + INTERVAL 10 DAY) AS vence
        FROM simaactual.cargosCuentaPaciente
-       WHERE (UPPER(folio) = ? OR UPPER(folioVenta) = ?)
+       WHERE (folio = ? OR folioVenta = ?)
          AND IFNULL(cantidadParticular, 0) > 0
          AND LOWER(IFNULL(statusCuenta, '')) NOT IN ('cerrada', 'cancelada')
          AND (
@@ -219,7 +220,7 @@ export async function verificarFolioCuenta(params: {
                 ROUND(IFNULL(cantidadParticular, 0), 2) AS monto,
                 DATE(CURDATE() + INTERVAL 10 DAY) AS vence
          FROM simaactual.cargosCuentaPaciente
-         WHERE (UPPER(folio) = ? OR UPPER(folioVenta) = ?)
+         WHERE (folio = ? OR folioVenta = ?)
            AND IFNULL(cantidadParticular, 0) > 0
            AND LOWER(IFNULL(statusCuenta, '')) NOT IN ('cerrada', 'cancelada')
            AND LOWER(IFNULL(statusCaja, '')) NOT IN ('pagado', 'cerrada')
