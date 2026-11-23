@@ -25,6 +25,54 @@ function paymentMethodId(metodo: MpMetodo) {
   return metodo === "spei" ? "clabe" : "oxxo";
 }
 
+function notificationUrl() {
+  const base = (
+    process.env.NEXTAUTH_URL ||
+    process.env.PAYMENTS_PUBLIC_URL ||
+    "https://pagosenlinea.sshlc.org"
+  ).replace(/\/$/, "");
+  return `${base}/api/webhooks/mercadopago`;
+}
+
+function mapPayment(data: Record<string, unknown>, metodo: MpMetodo, fallbackMonto: number) {
+  const td = (data.transaction_details || {}) as Record<string, unknown>;
+  const poi = (data.point_of_interaction || {}) as Record<string, unknown>;
+  const poiTx = (poi.transaction_data || {}) as Record<string, unknown>;
+  const bankInfo = (poiTx.bank_info || {}) as Record<string, unknown>;
+  const collector = (bankInfo.collector || {}) as Record<string, unknown>;
+
+  const referencia = String(
+    td.payment_method_reference_id ||
+      poiTx.bank_transfer_id ||
+      td.acquirer_reference ||
+      data.id ||
+      "",
+  );
+
+  return {
+    paymentId: String(data.id),
+    status: String(data.status || "pending"),
+    statusDetail: String(data.status_detail || ""),
+    monto: Number(data.transaction_amount || fallbackMonto),
+    referencia,
+    banco:
+      typeof collector.account_holder_name === "string"
+        ? collector.account_holder_name
+        : typeof td.financial_institution === "string"
+          ? td.financial_institution
+          : metodo === "spei"
+            ? "STP / SPEI"
+            : "OXXO",
+    ticketUrl:
+      String(poiTx.ticket_url || td.external_resource_url || "").trim() ||
+      undefined,
+    vence: data.date_of_expiration
+      ? String(data.date_of_expiration)
+      : undefined,
+    externalReference: String(data.external_reference || ""),
+  };
+}
+
 export async function crearPagoReferencia(params: {
   metodo: MpMetodo;
   monto: number;
@@ -55,6 +103,7 @@ export async function crearPagoReferencia(params: {
     payment_method_id: paymentMethodId(params.metodo),
     payer: { email: params.email.trim() },
     external_reference: externalReference,
+    notification_url: notificationUrl(),
     metadata: {
       folio: params.folio,
       portal: "pagosenlinea",
@@ -83,20 +132,8 @@ export async function crearPagoReferencia(params: {
     return { ok: false, code: "mp_rejected", message: msg };
   }
 
-  const td = (data.transaction_details || {}) as Record<string, unknown>;
-  const poi = (data.point_of_interaction || {}) as Record<string, unknown>;
-  const poiTx = (poi.transaction_data || {}) as Record<string, unknown>;
-  const bankInfo = (poiTx.bank_info || {}) as Record<string, unknown>;
-  const collector = (bankInfo.collector || {}) as Record<string, unknown>;
-
-  const referencia = String(
-    td.payment_method_reference_id ||
-      poiTx.bank_transfer_id ||
-      td.acquirer_reference ||
-      data.id ||
-      "",
-  );
-  if (!referencia) {
+  const mapped = mapPayment(data, params.metodo, params.monto);
+  if (!mapped.referencia) {
     return {
       ok: false,
       code: "mp_unavailable",
@@ -108,25 +145,32 @@ export async function crearPagoReferencia(params: {
     ok: true,
     provider: "mercadopago",
     metodo: params.metodo,
-    paymentId: String(data.id),
-    status: String(data.status || "pending"),
-    statusDetail: String(data.status_detail || ""),
-    monto: Number(data.transaction_amount || params.monto),
-    referencia,
-    banco:
-      typeof collector.account_holder_name === "string"
-        ? collector.account_holder_name
-        : typeof td.financial_institution === "string"
-          ? td.financial_institution
-          : params.metodo === "spei"
-            ? "STP / SPEI"
-            : "OXXO",
-    ticketUrl: String(
-      poiTx.ticket_url || td.external_resource_url || "",
-    ).trim() || undefined,
-    vence: data.date_of_expiration
-      ? String(data.date_of_expiration)
-      : undefined,
-    externalReference,
+    ...mapped,
+    externalReference: mapped.externalReference || externalReference,
   };
+}
+
+export async function consultarPagoMp(paymentId: string) {
+  const token = process.env.MERCADOPAGO_ACCESS_TOKEN?.trim();
+  if (!token) return null;
+  const res = await fetch(
+    `https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) {
+    console.error("mercadopago get", res.status, await res.text());
+    return null;
+  }
+  return (await res.json()) as Record<string, unknown>;
+}
+
+export function estadoPortalFromMp(status: string) {
+  if (status === "approved") return "Pagado" as const;
+  if (status === "pending" || status === "in_process") {
+    return "En revisión" as const;
+  }
+  if (status === "rejected" || status === "cancelled" || status === "refunded") {
+    return "Rechazado" as const;
+  }
+  return "Pendiente" as const;
 }

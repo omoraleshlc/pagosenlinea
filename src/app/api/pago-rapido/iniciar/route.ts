@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { paymentsLanEnabled, requestLooksLikeLanPortal } from "@/lib/dev-lan";
 import { crearPagoReferencia } from "@/lib/mercadopago";
+import { guardarPagoIntento } from "@/lib/pagos-db";
 import { verificarFolioCuenta } from "@/lib/sima-folio";
 
 export const runtime = "nodejs";
@@ -84,6 +85,36 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(pago, { status: 502 });
   }
 
+  try {
+    await guardarPagoIntento({
+      folio: cuenta.folio,
+      metodo,
+      email,
+      monto: pago.monto,
+      mpPaymentId: pago.paymentId,
+      externalReference: pago.externalReference,
+      referencia: pago.referencia,
+      status: pago.status,
+      statusDetail: pago.statusDetail,
+      ticketUrl: pago.ticketUrl,
+      banco: pago.banco,
+      vence: pago.vence,
+      payload: pago,
+    });
+  } catch (err) {
+    console.error("guardarPagoIntento", err);
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "db_unavailable",
+        message:
+          "Se creó el cobro en Mercado Pago, pero no pudimos guardarlo localmente. Conserva el id " +
+          pago.paymentId,
+      },
+      { status: 502 },
+    );
+  }
+
   return NextResponse.json({
     ok: true,
     folio: cuenta.folio,
@@ -102,6 +133,7 @@ export async function POST(req: NextRequest) {
       vence: pago.vence,
       email,
       provider: "mercadopago",
+      status: pago.status,
     },
   });
 }
