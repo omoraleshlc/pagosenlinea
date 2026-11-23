@@ -167,7 +167,12 @@ export async function verificarFolioCuenta(params: {
       };
     }
     const exp = expRows[0];
-    const fn = String(exp.fn || "").slice(0, 10);
+    // mysql2 returns DATE as JS Date — format locally, do not use String(date).slice
+    const fnRaw = exp.fn;
+    const fn =
+      fnRaw instanceof Date
+        ? toIsoDate(fnRaw)
+        : String(fnRaw || "").slice(0, 10);
     if (fn !== birthIso) {
       return {
         ok: false,
