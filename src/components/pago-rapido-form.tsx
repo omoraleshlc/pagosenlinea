@@ -10,20 +10,13 @@ import {
   folioValido,
   mxn,
 } from "@/lib/mock-cargos";
+import { FechaNacimientoPicker } from "./fecha-nacimiento-picker";
 
 type Resultado = {
   paciente: string;
   cargos: Cargo[];
   total: number;
 };
-
-/** Mexico display format dd/mm/yyyy with light masking while typing. */
-function formatearFechaMx(raw: string) {
-  const digits = raw.replace(/\D/g, "").slice(0, 8);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-}
 
 function fechaMxValida(value: string) {
   const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
@@ -165,24 +158,19 @@ export function PagoRapidoForm() {
 
       <label className="field">
         <span>Fecha de nacimiento del paciente</span>
-        <input
-          type="text"
-          inputMode="numeric"
-          autoComplete="bday"
-          placeholder="dd/mm/aaaa"
+        <FechaNacimientoPicker
+          id="nacimiento"
           value={nacimiento}
-          onChange={(e) => setNacimiento(formatearFechaMx(e.target.value))}
-          maxLength={10}
-          required
+          onChange={setNacimiento}
           aria-describedby="nacimiento-hint"
         />
         {intento && !nacimientoOk ? (
           <span className="field-error">
-            Escribe la fecha como dd/mm/aaaa (ejemplo: 15/03/1988).
+            Elige o escribe la fecha como dd/mm/aaaa (ejemplo: 15/03/1988).
           </span>
         ) : (
           <span id="nacimiento-hint" className="field-hint">
-            Formato México: dd/mm/aaaa
+            Formato México: dd/mm/aaaa — usa el calendario para elegir fácil.
           </span>
         )}
       </label>
