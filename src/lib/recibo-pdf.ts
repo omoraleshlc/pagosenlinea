@@ -58,6 +58,7 @@ export async function generarReciboCajaPdf(
     const pageW = doc.page.width;
     const left = doc.page.margins.left;
     const right = pageW - doc.page.margins.right;
+    const descWidth = right - left - 36 - 70 - 8;
 
     if (fs.existsSync(logoPath)) {
       try {
@@ -125,31 +126,34 @@ export async function generarReciboCajaPdf(
       .stroke();
 
     let y = 108;
-    const row = (label: string, value: string) => {
-      doc
-        .fontSize(8)
-        .fillColor("#666")
-        .text(label, left, y, { width: 70 });
+    const metaRow = (label: string, value: string) => {
+      doc.fontSize(8).fillColor("#666").text(label, left, y, { width: 70 });
+      const h = Math.max(
+        12,
+        doc.heightOfString(value || "—", {
+          width: right - left - 72,
+        }),
+      );
       doc
         .fillColor("#111")
         .text(value || "—", left + 72, y, { width: right - left - 72 });
-      y += 12;
+      y += h + 2;
     };
 
-    row("Paciente", data.paciente);
-    row("Ref.", data.folio);
-    row("Folio pago", data.folioPago);
-    row("Método", data.metodoLabel);
-    if (data.autorizacion) row("Autorización", data.autorizacion);
-    row("Email", data.email);
-    row("Depto.", "Pagos en línea");
+    metaRow("Paciente", data.paciente);
+    metaRow("Ref.", data.folio);
+    metaRow("Folio pago", data.folioPago);
+    metaRow("Método", data.metodoLabel);
+    if (data.autorizacion) metaRow("Autorización", data.autorizacion);
+    metaRow("Email", data.email);
+    metaRow("Depto.", "Pagos en línea");
 
     y += 8;
     doc
       .fontSize(8)
       .fillColor("#214690")
       .text("Cant.", left, y, { width: 36 })
-      .text("Descripción", left + 40, y, { width: 220 })
+      .text("Descripción", left + 40, y, { width: descWidth })
       .text("Importe", right - 70, y, { width: 70, align: "right" });
     y += 12;
     doc
@@ -160,16 +164,23 @@ export async function generarReciboCajaPdf(
     y += 6;
 
     for (const linea of data.lineas) {
-      doc
-        .fontSize(8)
-        .fillColor("#111")
-        .text(String(linea.cantidad), left, y, { width: 36 })
-        .text(linea.descripcion, left + 40, y, { width: 220 })
-        .text(mxn(linea.importe), right - 70, y, {
-          width: 70,
-          align: "right",
-        });
-      y += 14;
+      doc.fontSize(8).fillColor("#111");
+      const descH = Math.max(
+        12,
+        doc.heightOfString(linea.descripcion, { width: descWidth }),
+      );
+      const rowH = descH + 4;
+
+      doc.text(String(linea.cantidad), left, y, { width: 36 });
+      doc.text(linea.descripcion, left + 40, y, {
+        width: descWidth,
+        lineGap: 1,
+      });
+      doc.text(mxn(linea.importe), right - 70, y, {
+        width: 70,
+        align: "right",
+      });
+      y += rowH;
     }
 
     y += 8;
