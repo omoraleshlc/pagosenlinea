@@ -1,0 +1,3 @@
+# Pre-production / LAN portal — do not index.
+User-agent: *
+Disallow: /
