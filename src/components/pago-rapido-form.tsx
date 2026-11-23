@@ -692,8 +692,12 @@ export function PagoRapidoForm() {
           ) : null}
 
           {pagoOk.estado === "Pagado" ? (
-            <button type="button" className="btn-primary btn-block" onClick={limpiar}>
-              Listo
+            <button
+              type="button"
+              className="btn-primary btn-block"
+              onClick={limpiar}
+            >
+              Pagar otro folio
             </button>
           ) : null}
 
@@ -934,9 +938,15 @@ export function PagoRapidoForm() {
             onChange={(e) => setAcepto(e.target.checked)}
           />
           <span>
-            Acepto los{" "}
-            <Link href="/register">términos del servicio</Link> y el aviso de
-            privacidad de Hospital La Carlota.
+            Acepto los términos del servicio y el{" "}
+            <a
+              href="https://www.hospitallacarlota.com/aviso-privacidad.html"
+              target="_blank"
+              rel="noreferrer"
+            >
+              aviso de privacidad
+            </a>{" "}
+            de Hospital La Carlota.
           </span>
         </label>
 
@@ -1007,10 +1017,8 @@ export function PagoRapidoForm() {
     return (
       <div className="pago-rapido-result">
         <div className="invitado-banner">
-          Estás pagando como invitado: recibirás el comprobante por correo, sin
-          historial.{" "}
-          <Link href="/register">Crea tu cuenta</Link> si quieres guardar tus
-          pagos.
+          Estás pagando como invitado: al confirmar generamos tu recibo PDF y lo
+          enviamos al correo que indiques.
         </div>
         <div className="cuenta-card">
           <div className="cuenta-card-head">
@@ -1047,9 +1055,8 @@ export function PagoRapidoForm() {
         </button>
 
         <p className="info-note">
-          Pagando sin cuenta recibirás tu comprobante por correo, pero no verás
-          historial. Puedes <Link href="/register">crear tu cuenta</Link> cuando
-          quieras.
+          No necesitas crear cuenta para pagar. El recibo queda registrado en el
+          portal de desarrollo y disponible para descargar.
         </p>
 
         <button type="button" className="link-button" onClick={limpiar}>
@@ -1117,9 +1124,9 @@ export function PagoRapidoForm() {
       </button>
 
       <p className="create-account">
-        ¿Prefieres ver todo en un solo lugar?{" "}
-        <Link href="/register">Crea tu cuenta</Link> o{" "}
-        <Link href="/login">inicia sesión</Link>.
+        ¿Ya tienes acceso al hospital?{" "}
+        <Link href="/login">Inicia sesión</Link> (opcional). El pago rápido no
+        requiere cuenta.
       </p>
     </form>
   );

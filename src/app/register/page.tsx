@@ -7,11 +7,14 @@ export default function RegisterPage() {
         <h1>Crear cuenta</h1>
         <p>
           El registro local se habilitará cuando el backend de cuentas esté
-          conectado. Mientras tanto puedes iniciar sesión con Google o Microsoft
-          si OAuth está configurado.
+          conectado. No hace falta crear cuenta para pagar: usa{" "}
+          <Link href="/pago-rapido">pago rápido</Link> y descarga tu recibo al
+          confirmar.
         </p>
         <p>
-          <Link href="/login">Volver a iniciar sesión</Link>
+          <Link href="/pago-rapido">Ir a pago rápido</Link>
+          {" · "}
+          <Link href="/login">Iniciar sesión</Link>
         </p>
       </div>
     </main>
