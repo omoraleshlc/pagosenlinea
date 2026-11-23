@@ -94,6 +94,24 @@ function toIsoDate(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
+/** SIMA paciente_dedcoa.id_forma_pago labels (caja “Deducibles y Coaseguros”). */
+function etiquetaDedcoa(idFormaPago: number) {
+  switch (idFormaPago) {
+    case 168:
+      return "Pago de coaseguro 1";
+    case 169:
+      return "Pago de coaseguro 2";
+    case 170:
+      return "Pago de deducible 1";
+    case 171:
+      return "Pago de deducible 2";
+    case 248:
+      return "Pago compartido · copago";
+    default:
+      return "Coaseguro / deducible / copago";
+  }
+}
+
 /**
  * Read-only verification of folio de cuenta/venta + birth date against SIMA on .64.
  * Never writes. Masks patient name in the response.
@@ -244,102 +262,28 @@ export async function verificarFolioCuenta(params: {
       rows = fallback;
     }
 
-    // Posted coaseguro / deducible / copago charges minus matching ingresos (abonos)
-    const [coaChargeRows] = await pool.query<RowDataPacket[]>(
-      `SELECT keyCAP,
-              ${conceptoExpr} AS concepto,
-              IFNULL(gpoProducto, '') AS detalle,
-              ROUND(IFNULL(cantidadParticular, 0), 2) AS monto,
-              DATE(CURDATE() + INTERVAL 10 DAY) AS vence
-       FROM simaactual.cargosCuentaPaciente
-       WHERE (folio = ? OR folioVenta = ?)
-         AND IFNULL(naturaleza, 'C') = 'C'
-         AND IFNULL(cantidadParticular, 0) > 0
-         AND LOWER(CONCAT_WS(' ', descripcion, descripcionArticulo))
-             REGEXP 'coaseg|deducib|copago'
-         AND LOWER(IFNULL(statusCaja, '')) NOT IN ('pagado')
-         AND LOWER(IFNULL(statusCuenta, '')) NOT IN ('cancelada')
-       ORDER BY keyCAP
+    // Active coaseguro / deducible / copago from SIMA caja modal
+    // (sima_venta.paciente_dedcoa — same source as “Deducibles y Coaseguros”).
+    const idPaciente = Number(pac.id_paciente);
+    const [dedcoaRows] = await pool.query<RowDataPacket[]>(
+      `SELECT id_paciente_dedcoa, id_forma_pago, ROUND(IFNULL(importe, 0), 2) AS monto, status
+       FROM sima_venta.paciente_dedcoa
+       WHERE id_paciente = ?
+         AND LOWER(IFNULL(status, '')) = 'activo'
+         AND IFNULL(importe, 0) > 0
+       ORDER BY id_paciente_dedcoa
        LIMIT 20`,
-      [folio, folio],
+      [idPaciente],
     );
-    const [coaAbonoRows] = await pool.query<RowDataPacket[]>(
-      `SELECT ROUND(SUM(IFNULL(cantidadParticular, 0)), 2) AS abonado
-       FROM simaactual.cargosCuentaPaciente
-       WHERE (folio = ? OR folioVenta = ?)
-         AND IFNULL(naturaleza, 'C') = 'A'
-         AND LOWER(CONCAT_WS(' ', descripcion, descripcionArticulo))
-             REGEXP 'coaseg|deducib|copago|pago de deducible|pago de coaseguro|pago compartido'`,
-      [folio, folio],
-    );
-    const coaAbonado = Number(coaAbonoRows[0]?.abonado || 0);
-    let coaCargos: FolioCargo[] = coaChargeRows.map((r) => ({
-      id: String(r.keyCAP),
+    const venceCoa = toIsoDate(new Date(Date.now() + 10 * 86400000));
+    const coaCargos: FolioCargo[] = dedcoaRows.map((r) => ({
+      id: `dedcoa-${r.id_paciente_dedcoa}`,
       folio,
-      concepto: String(r.concepto),
-      detalle: String(r.detalle || "coaseguro"),
+      concepto: etiquetaDedcoa(Number(r.id_forma_pago)),
+      detalle: "Deducibles y Coaseguros",
       monto: Number(r.monto),
-      vence: String(r.vence).slice(0, 10),
+      vence: venceCoa,
     }));
-    if (coaAbonado > 0 && coaCargos.length) {
-      let rest = coaAbonado;
-      coaCargos = coaCargos
-        .map((c) => {
-          if (rest <= 0) return c;
-          const take = Math.min(c.monto, rest);
-          rest -= take;
-          return { ...c, monto: Math.round((c.monto - take) * 100) / 100 };
-        })
-        .filter((c) => c.monto > 0);
-    }
-
-    // If account has coaseguro-capable product groups but no posted coa/ded/copago,
-    // caja still collects a flat 100 MXN on top of existing particular ingresos.
-    const gpos = [
-      ...new Set(
-        rows
-          .map((r) => String(r.gpoProducto || "").trim())
-          .filter(Boolean),
-      ),
-    ];
-    let needsFlatCoa = false;
-    if (!coaCargos.length && gpos.length) {
-      const [gpoRows] = await pool.query<RowDataPacket[]>(
-        `SELECT codigoGP, IFNULL(coaseguro, '') AS coaseguro
-         FROM simaactual.gpoProductos
-         WHERE codigoGP IN (${gpos.map(() => "?").join(",")})`,
-        gpos,
-      );
-      needsFlatCoa = gpoRows.some(
-        (g) => String(g.coaseguro || "").toLowerCase() === "si",
-      );
-    } else if (!coaCargos.length && rows.length) {
-      // no gpo on rows — still check joined cargo gpos via folio
-      const [flagRows] = await pool.query<RowDataPacket[]>(
-        `SELECT COUNT(*) AS n
-         FROM simaactual.cargosCuentaPaciente c
-         JOIN simaactual.gpoProductos g ON g.codigoGP = c.gpoProducto
-         WHERE (c.folio = ? OR c.folioVenta = ?)
-           AND LOWER(IFNULL(g.coaseguro, '')) = 'si'
-           AND IFNULL(c.naturaleza, 'C') = 'C'`,
-        [folio, folio],
-      );
-      needsFlatCoa = Number(flagRows[0]?.n || 0) > 0;
-    }
-
-    if (needsFlatCoa && coaAbonado < 100) {
-      const monto = Math.round((100 - coaAbonado) * 100) / 100;
-      if (monto > 0) {
-        coaCargos.push({
-          id: `coa-${folio}`,
-          folio,
-          concepto: "Coaseguro / deducible / copago",
-          detalle: "Pendiente de registrar en caja",
-          monto,
-          vence: toIsoDate(new Date(Date.now() + 10 * 86400000)),
-        });
-      }
-    }
 
     const cargos: FolioCargo[] = [
       ...rows.map((r) => ({
