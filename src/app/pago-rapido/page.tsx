@@ -5,7 +5,7 @@ export default function PagoRapidoPage() {
   return (
     <AuthShell
       title="Paga con tu folio"
-      subtitle="Sin crear cuenta. Ideal si pagas por otra persona o solo una vez."
+      subtitle="Opción principal: sin crear cuenta. Ideal si pagas por otra persona o solo una vez."
       wide
     >
       <PagoRapidoForm />

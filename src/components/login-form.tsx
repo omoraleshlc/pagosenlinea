@@ -82,7 +82,19 @@ export function LoginForm() {
           </p>
         </header>
 
-        <div className="social-stack">
+        <Link href="/pago-rapido" className="btn-primary btn-block folio-first">
+          <ReceiptIcon /> Pagar sin cuenta con mi folio
+        </Link>
+        <p className="folio-first-hint">
+          Opción recomendada si pagas una sola vez o por otra persona. Solo
+          necesitas el folio y la fecha de nacimiento.
+        </p>
+
+        <div className="divider" role="separator">
+          <span>o inicia sesión con tu cuenta</span>
+        </div>
+
+        <div className="social-stack social-stack-tight">
           <button
             type="button"
             className="btn-social"
@@ -209,9 +221,6 @@ export function LoginForm() {
           <p className="create-account">
             ¿Primera vez? <Link href="/register">Crea tu cuenta</Link>
           </p>
-          <Link href="/pago-rapido" className="pago-rapido">
-            <ReceiptIcon /> Pagar sin cuenta con mi folio
-          </Link>
         </div>
 
         <p className="legal-foot">
