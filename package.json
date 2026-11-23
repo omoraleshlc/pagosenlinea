@@ -13,6 +13,8 @@
     "mysql2": "^3.24.6",
     "next": "15.5.29",
     "next-auth": "^4.24.11",
+    "nodemailer": "^6.10.1",
+    "pdfkit": "^0.21.0",
     "react": "19.1.0",
     "react-datepicker": "^9.1.0",
     "react-dom": "19.1.0"
@@ -21,6 +23,8 @@
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pdfkit": "^0.17.7",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

@@ -231,21 +231,70 @@ export function PagoRapidoForm() {
     });
   }
 
-  function terminarPagoDemo(estado: PagoOk["estado"]) {
+  async function terminarPagoDemo(estado: PagoOk["estado"]) {
     if (!resultado) return;
-    setPagoOk({
-      estado,
-      folioPago: folioPagoNuevo(),
-      monto: resultado.total,
-      metodoLabel,
-      email: email.trim(),
-      provider: "demo",
-      autorizacion:
-        estado === "Pagado"
-          ? String(100000 + Math.floor(Math.random() * 900000))
-          : undefined,
-    });
-    setPaso("resultado");
+    if (estado !== "Pagado") {
+      setPagoOk({
+        estado,
+        folioPago: folioPagoNuevo(),
+        monto: resultado.total,
+        metodoLabel,
+        email: email.trim(),
+        provider: "demo",
+      });
+      setPaso("resultado");
+      return;
+    }
+
+    setProcesando(true);
+    setErrorMsg(null);
+    const folioPago = folioPagoNuevo();
+    const autorizacion = String(100000 + Math.floor(Math.random() * 900000));
+    try {
+      const res = await fetch("/api/pago-rapido/completar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          folio: resultado.folio,
+          nacimiento,
+          email: email.trim(),
+          metodoLabel,
+          autorizacion,
+          folioPago,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        rechazar(
+          "El pago no se pudo registrar",
+          data.message ||
+            "Intenta de nuevo. Si el problema continúa, acude a caja.",
+        );
+        return;
+      }
+      setPagoOk({
+        estado: "Pagado",
+        folioPago: data.folioPago,
+        monto: data.total,
+        metodoLabel,
+        email: data.email,
+        provider: "demo",
+        autorizacion: data.autorizacion,
+        ticketUrl: data.pdfUrl,
+        referencia: data.reciboNum ? `Recibo ${data.reciboNum}` : undefined,
+        banco: data.reciboEnviado
+          ? `Recibo enviado a ${data.email}`
+          : data.mailMessage || "Recibo generado (correo pendiente)",
+      });
+      setPaso("resultado");
+    } catch {
+      rechazar(
+        "No pudimos conectar con el cobro",
+        "Revisa tu conexión e intenta de nuevo.",
+      );
+    } finally {
+      setProcesando(false);
+    }
   }
 
   function rechazar(titulo: string, detalle: string) {
@@ -365,11 +414,7 @@ export function PagoRapidoForm() {
     }
     setError3ds("");
     setTresDS(false);
-    setProcesando(true);
-    window.setTimeout(() => {
-      setProcesando(false);
-      terminarPagoDemo("Pagado");
-    }, 700);
+    void terminarPagoDemo("Pagado");
   }
 
   async function copiarTexto(texto: string) {
@@ -502,7 +547,8 @@ export function PagoRapidoForm() {
           </h2>
           <p className="checkout-result-copy">
             {pagoOk.estado === "Pagado"
-              ? `Enviamos el comprobante a ${pagoOk.email}.`
+              ? pagoOk.banco ||
+                `Registramos tu pago. Recibo disponible para ${pagoOk.email}.`
               : cancelado
                 ? "No se cobró nada. Tus cargos siguen pendientes."
                 : pagoOk.metodoLabel === "SPEI"
@@ -532,7 +578,24 @@ export function PagoRapidoForm() {
                 {pagoOk.autorizacion ?? pagoOk.referencia}
               </dd>
             </div>
+            {pagoOk.estado === "Pagado" && pagoOk.referencia ? (
+              <div>
+                <dt>Recibo</dt>
+                <dd>{pagoOk.referencia}</dd>
+              </div>
+            ) : null}
           </dl>
+          {pagoOk.estado === "Pagado" && pagoOk.ticketUrl ? (
+            <a
+              className="btn-secondary btn-block"
+              href={pagoOk.ticketUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={{ textAlign: "center", textDecoration: "none" }}
+            >
+              Ver / descargar recibo PDF
+            </a>
+          ) : null}
           {!cancelado &&
           pagoOk.estado !== "Pagado" &&
           pagoOk.referencia ? (
