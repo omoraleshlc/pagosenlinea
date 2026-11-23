@@ -100,6 +100,13 @@ export async function POST(req: NextRequest) {
       autorizacion,
       lineas,
       total: cuenta.total,
+      seguro: "Particular",
+      titular: "-",
+      expediente: "-",
+      caja: "PEL",
+      corte: "-",
+      usuario: "portal",
+      depto: "Caja",
     });
   } catch (err) {
     console.error("recibo pdf", err);
