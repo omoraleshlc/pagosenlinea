@@ -7,7 +7,8 @@ export default async function HomePage() {
   const session = await getServerSession(getAuthOptions());
 
   if (!session) {
-    redirect("/login");
+    // Default guest entry: pay with folio (no account)
+    redirect("/pago-rapido");
   }
 
   return (
