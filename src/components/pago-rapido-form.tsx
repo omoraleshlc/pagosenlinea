@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Cargo, fechaCorta, folioValido, mxn } from "@/lib/mock-cargos";
 import { FechaNacimientoPicker } from "./fecha-nacimiento-picker";
@@ -17,8 +17,9 @@ type Metodo = "tarjeta" | "spei" | "tienda";
 type Paso = "buscar" | "cuenta" | "metodo" | "confirmar" | "resultado" | "fallo";
 
 type PagoOk = {
-  estado: "Pagado" | "En revisión" | "Pendiente";
+  estado: "Pagado" | "En revisión" | "Pendiente" | "Rechazado";
   folioPago: string;
+  paymentId?: string;
   monto: number;
   metodoLabel: string;
   autorizacion?: string;
@@ -263,6 +264,7 @@ export function PagoRapidoForm() {
       setPagoOk({
         estado: data.pago.estado,
         folioPago: data.pago.folioPago,
+        paymentId: data.pago.paymentId,
         monto: data.pago.monto,
         metodoLabel: data.pago.metodoLabel,
         referencia: data.pago.referencia,
@@ -351,6 +353,48 @@ export function PagoRapidoForm() {
     }
   }
 
+  useEffect(() => {
+    if (
+      paso !== "resultado" ||
+      !pagoOk?.paymentId ||
+      pagoOk.provider !== "mercadopago" ||
+      pagoOk.estado === "Pagado" ||
+      pagoOk.estado === "Rechazado"
+    ) {
+      return;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await fetch(
+          `/api/pago-rapido/estado?paymentId=${encodeURIComponent(pagoOk.paymentId!)}`,
+        );
+        const data = await res.json();
+        if (cancelled || !data.ok) return;
+        setPagoOk((prev) =>
+          prev
+            ? {
+                ...prev,
+                estado: data.estado,
+                autorizacion:
+                  data.pagado && !prev.autorizacion
+                    ? String(data.paymentId)
+                    : prev.autorizacion,
+              }
+            : prev,
+        );
+      } catch {
+        /* keep polling */
+      }
+    };
+    void tick();
+    const id = window.setInterval(tick, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [paso, pagoOk?.paymentId, pagoOk?.provider, pagoOk?.estado]);
+
   if (paso === "resultado" && pagoOk && resultado) {
     return (
       <div className="pago-rapido-result">
@@ -433,8 +477,10 @@ export function PagoRapidoForm() {
           ) : null}
           <p className="field-hint">
             {pagoOk.provider === "mercadopago"
-              ? "Referencia real de Mercado Pago (servidor LAN / pagosenlinea.sshlc.org). Aún no se aplica automáticamente en SIMA."
-              : "Demostración de tarjeta. SPEI y OXXO usan Mercado Pago en este servidor de desarrollo."}
+              ? pagoOk.estado === "Pagado"
+                ? "Pago acreditado en Mercado Pago. La aplicación automática en SIMA sigue pendiente."
+                : "Referencia real (CLABE/OXXO). Consultamos el estado cada 15 s; también puedes abrir las instrucciones."
+              : "Demostración de tarjeta. SPEI y OXXO usan Mercado Pago real en este servidor."}
           </p>
           <button type="button" className="btn-primary btn-block" onClick={limpiar}>
             Pagar otro folio
