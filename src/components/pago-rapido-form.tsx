@@ -170,7 +170,8 @@ export function PagoRapidoForm() {
           </span>
         ) : (
           <span id="nacimiento-hint" className="field-hint">
-            Formato México: dd/mm/aaaa — usa el calendario para elegir fácil.
+            Formato México: dd/mm/aaaa (se insertan las / al escribir) o elige en
+            el calendario.
           </span>
         )}
       </label>
