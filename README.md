@@ -21,6 +21,8 @@ Login layout follows the existing **sima_template / pagos AuthLayout** (TailAdmi
 
 Access to `.43` / internal ports needs the Tunnelblick **Developer** VPN profile.
 
+**Production leap (demo off):** `NEXT_PUBLIC_DEMO_PAYMENTS=false`, rebuild/restart, then wire the real card processor. One flag hides fictional cards and disables fake 3DS.
+
 ## Scripts
 
 ```bash
