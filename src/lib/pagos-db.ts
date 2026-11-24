@@ -26,10 +26,12 @@ export async function getPagosPool() {
   });
 }
 
+export type PagoMetodo = "spei" | "tienda" | "tarjeta";
+
 export type PagoIntento = {
   id: number;
   folio: string;
-  metodo: "spei" | "tienda";
+  metodo: PagoMetodo;
   email: string;
   monto: number;
   mpPaymentId: string;
@@ -44,7 +46,7 @@ export type PagoIntento = {
 
 export async function guardarPagoIntento(row: {
   folio: string;
-  metodo: "spei" | "tienda";
+  metodo: PagoMetodo;
   email: string;
   monto: number;
   mpPaymentId: string;
@@ -135,6 +137,78 @@ export async function leerPagoPorMpId(
       banco: r.banco ? String(r.banco) : null,
       vence: r.vence ? String(r.vence) : null,
     };
+  } finally {
+    await pool.end();
+  }
+}
+
+/** Persist a completed portal payment (developer DB) and return insert id. */
+export async function guardarPagoCompletado(row: {
+  folio: string;
+  metodo: PagoMetodo;
+  email: string;
+  monto: number;
+  folioPago: string;
+  autorizacion?: string;
+  reciboNum: string;
+  payload?: unknown;
+}) {
+  const pool = await getPagosPool();
+  try {
+    const [result] = await pool.query<ResultSetHeader>(
+      `INSERT INTO pago_intentos
+        (folio, metodo, email, monto, mp_payment_id, external_reference, referencia,
+         status, status_detail, ticket_url, banco, vence, payload_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'approved', ?, NULL, ?, NULL, CAST(? AS JSON))`,
+      [
+        row.folio,
+        row.metodo,
+        row.email,
+        row.monto,
+        row.folioPago,
+        `pel-${row.folio}-${row.folioPago}`,
+        row.reciboNum,
+        row.autorizacion || "portal_ok",
+        row.metodo === "tarjeta" ? "Pagos en línea" : null,
+        JSON.stringify({
+          ...(typeof row.payload === "object" && row.payload
+            ? row.payload
+            : {}),
+          reciboNum: row.reciboNum,
+          emailed: false,
+        }),
+      ],
+    );
+    return Number(result.insertId);
+  } finally {
+    await pool.end();
+  }
+}
+
+export async function marcarReciboEnviado(
+  folioPago: string,
+  patch: { messageId?: string; pdfPath?: string },
+) {
+  const pool = await getPagosPool();
+  try {
+    await pool.query(
+      `UPDATE pago_intentos
+       SET payload_json = JSON_SET(
+             COALESCE(payload_json, JSON_OBJECT()),
+             '$.emailed', true,
+             '$.messageId', CAST(? AS JSON),
+             '$.pdfPath', CAST(? AS JSON),
+             '$.emailedAt', CAST(? AS JSON)
+           ),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE mp_payment_id = ?`,
+      [
+        JSON.stringify(patch.messageId || null),
+        JSON.stringify(patch.pdfPath || null),
+        JSON.stringify(new Date().toISOString()),
+        folioPago,
+      ],
+    );
   } finally {
     await pool.end();
   }

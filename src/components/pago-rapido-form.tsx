@@ -28,7 +28,7 @@ type PagoOk = {
   ticketUrl?: string;
   vence?: string;
   email: string;
-  provider?: "demo" | "mercadopago";
+  provider?: "portal" | "mercadopago";
 };
 
 function fechaVenceMx(iso?: string) {
@@ -57,18 +57,7 @@ const METODOS: {
     desc: "Visa, Mastercard o American Express",
     tiempo: "Al instante",
   },
-  {
-    id: "spei",
-    titulo: "Transferencia SPEI",
-    desc: "Desde tu banca en línea con CLABE",
-    tiempo: "Minutos",
-  },
-  {
-    id: "tienda",
-    titulo: "Pago en tienda (OXXO)",
-    desc: "Referencia para pagar en efectivo",
-    tiempo: "1 a 24 h",
-  },
+  // Mercado Pago SPEI/OXXO stashed — re-add when PAYMENTS_LAN_ONLY is back on.
 ];
 
 function fechaMxValida(value: string) {
@@ -111,10 +100,6 @@ export function PagoRapidoForm() {
     cvv: "",
   });
   const [procesando, setProcesando] = useState(false);
-  const [tresDS, setTresDS] = useState(false);
-  const [codigo3ds, setCodigo3ds] = useState("");
-  const [error3ds, setError3ds] = useState("");
-  const [intentos3ds, setIntentos3ds] = useState(0);
   const [pagoOk, setPagoOk] = useState<PagoOk | null>(null);
   const [fallo, setFallo] = useState<{
     titulo: string;
@@ -206,7 +191,6 @@ export function PagoRapidoForm() {
     setPagoOk(null);
     setFallo(null);
     setAcepto(false);
-    setTresDS(false);
     setTarjeta({ numero: "", nombre: "", vence: "", cvv: "" });
   }
 
@@ -226,21 +210,59 @@ export function PagoRapidoForm() {
     }));
   }
 
-  function terminarPagoDemo(estado: PagoOk["estado"]) {
+  async function completarPagoTarjeta() {
     if (!resultado) return;
-    setPagoOk({
-      estado,
-      folioPago: folioPagoNuevo(),
-      monto: resultado.total,
-      metodoLabel,
-      email: email.trim(),
-      provider: "demo",
-      autorizacion:
-        estado === "Pagado"
-          ? String(100000 + Math.floor(Math.random() * 900000))
-          : undefined,
-    });
-    setPaso("resultado");
+
+    setProcesando(true);
+    setErrorMsg(null);
+    const folioPago = folioPagoNuevo();
+    const autorizacion = String(100000 + Math.floor(Math.random() * 900000));
+    try {
+      const res = await fetch("/api/pago-rapido/completar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          folio: resultado.folio,
+          nacimiento,
+          email: email.trim(),
+          metodoLabel,
+          autorizacion,
+          folioPago,
+          ultimosDigitos: digitos.slice(-4),
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        rechazar(
+          "El pago no se pudo registrar",
+          data.message ||
+            "Intenta de nuevo. Si el problema continúa, acude a caja.",
+        );
+        return;
+      }
+      setPagoOk({
+        estado: "Pagado",
+        folioPago: data.folioPago,
+        monto: data.total,
+        metodoLabel,
+        email: data.email,
+        provider: "portal",
+        autorizacion: data.autorizacion,
+        ticketUrl: data.pdfUrl,
+        referencia: data.reciboNum ? `Recibo ${data.reciboNum}` : undefined,
+        banco: data.reciboEnviado
+          ? `Recibo enviado a ${data.email}`
+          : data.mailMessage || "Recibo generado (correo pendiente)",
+      });
+      setPaso("resultado");
+    } catch {
+      rechazar(
+        "No pudimos conectar con el cobro",
+        "Revisa tu conexión e intenta de nuevo.",
+      );
+    } finally {
+      setProcesando(false);
+    }
   }
 
   function rechazar(titulo: string, detalle: string) {
@@ -307,57 +329,7 @@ export function PagoRapidoForm() {
       void pagarConReferencia();
       return;
     }
-    setProcesando(true);
-    window.setTimeout(() => {
-      setProcesando(false);
-      const final = digitos.slice(-4);
-      if (final === "0002") {
-        rechazar(
-          "Tu banco rechazó el pago",
-          "Fondos insuficientes o la tarjeta no está habilitada para compras en línea.",
-        );
-        return;
-      }
-      if (final === "0069") {
-        rechazar(
-          "Tu tarjeta está vencida",
-          "La fecha de vencimiento ya pasó. Revisa los datos o usa otra tarjeta.",
-        );
-        return;
-      }
-      setCodigo3ds("");
-      setError3ds("");
-      setIntentos3ds(0);
-      setTresDS(true);
-    }, 900);
-  }
-
-  function confirmar3DS() {
-    if (codigo3ds.length < 6) return;
-    if (codigo3ds === "000000") {
-      const next = intentos3ds + 1;
-      setIntentos3ds(next);
-      setCodigo3ds("");
-      if (next >= 3) {
-        setTresDS(false);
-        rechazar(
-          "No pudimos verificar tu identidad",
-          "Escribiste un código incorrecto 3 veces. Por seguridad bloqueamos este intento.",
-        );
-      } else {
-        setError3ds(
-          `Código incorrecto. Te quedan ${3 - next} ${3 - next === 1 ? "intento" : "intentos"}.`,
-        );
-      }
-      return;
-    }
-    setError3ds("");
-    setTresDS(false);
-    setProcesando(true);
-    window.setTimeout(() => {
-      setProcesando(false);
-      terminarPagoDemo("Pagado");
-    }, 700);
+    void completarPagoTarjeta();
   }
 
   async function copiarTexto(texto: string) {
@@ -490,7 +462,8 @@ export function PagoRapidoForm() {
           </h2>
           <p className="checkout-result-copy">
             {pagoOk.estado === "Pagado"
-              ? `Enviamos el comprobante a ${pagoOk.email}.`
+              ? pagoOk.banco ||
+                `Registramos tu pago. Recibo disponible para ${pagoOk.email}.`
               : cancelado
                 ? "No se cobró nada. Tus cargos siguen pendientes."
                 : pagoOk.metodoLabel === "SPEI"
@@ -520,7 +493,24 @@ export function PagoRapidoForm() {
                 {pagoOk.autorizacion ?? pagoOk.referencia}
               </dd>
             </div>
+            {pagoOk.estado === "Pagado" && pagoOk.referencia ? (
+              <div>
+                <dt>Recibo</dt>
+                <dd>{pagoOk.referencia}</dd>
+              </div>
+            ) : null}
           </dl>
+          {pagoOk.estado === "Pagado" && pagoOk.ticketUrl ? (
+            <a
+              className="btn-secondary btn-block"
+              href={pagoOk.ticketUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={{ textAlign: "center", textDecoration: "none" }}
+            >
+              Ver / descargar recibo PDF
+            </a>
+          ) : null}
           {!cancelado &&
           pagoOk.estado !== "Pagado" &&
           pagoOk.referencia ? (
@@ -617,8 +607,12 @@ export function PagoRapidoForm() {
           ) : null}
 
           {pagoOk.estado === "Pagado" ? (
-            <button type="button" className="btn-primary btn-block" onClick={limpiar}>
-              Listo
+            <button
+              type="button"
+              className="btn-primary btn-block"
+              onClick={limpiar}
+            >
+              Pagar otro folio
             </button>
           ) : null}
 
@@ -653,17 +647,6 @@ export function PagoRapidoForm() {
             }}
           >
             Intentar con otra tarjeta
-          </button>
-          <button
-            type="button"
-            className="btn-secondary btn-block"
-            onClick={() => {
-              setFallo(null);
-              setMetodo("spei");
-              setPaso("metodo");
-            }}
-          >
-            Pagar con SPEI
           </button>
           <button type="button" className="link-button" onClick={limpiar}>
             Buscar otro folio
@@ -765,10 +748,6 @@ export function PagoRapidoForm() {
                 />
               </label>
             </div>
-            <p className="field-hint">
-              Demostración: termina en 0002 (rechazo) o 0069 (vencida). En
-              producción Conekta tokeniza la tarjeta; el hospital no la guarda.
-            </p>
           </div>
         ) : (
           <p className="info-note">
@@ -840,9 +819,15 @@ export function PagoRapidoForm() {
             onChange={(e) => setAcepto(e.target.checked)}
           />
           <span>
-            Acepto los{" "}
-            <Link href="/register">términos del servicio</Link> y el aviso de
-            privacidad de Hospital La Carlota.
+            Acepto los términos del servicio y el{" "}
+            <a
+              href="https://www.hospitallacarlota.com/aviso-privacidad.html"
+              target="_blank"
+              rel="noreferrer"
+            >
+              aviso de privacidad
+            </a>{" "}
+            de Hospital La Carlota.
           </span>
         </label>
 
@@ -862,49 +847,6 @@ export function PagoRapidoForm() {
           Cambiar método
         </button>
 
-        {tresDS ? (
-          <div className="modal-3ds" role="dialog" aria-modal="true">
-            <div className="modal-3ds-card">
-              <h3>Verificación 3D Secure</h3>
-              <p>
-                Tu banco envió un código. En demostración usa cualquier código
-                de 6 dígitos distinto de 000000.
-              </p>
-              <label className="field">
-                <span>Código</span>
-                <input
-                  value={codigo3ds}
-                  onChange={(e) =>
-                    setCodigo3ds(e.target.value.replace(/\D/g, "").slice(0, 6))
-                  }
-                  inputMode="numeric"
-                  placeholder="••••••"
-                  autoFocus
-                />
-              </label>
-              {error3ds ? (
-                <p className="field-error" role="alert">
-                  {error3ds}
-                </p>
-              ) : null}
-              <button
-                type="button"
-                className="btn-primary btn-block"
-                disabled={codigo3ds.length < 6}
-                onClick={confirmar3DS}
-              >
-                Confirmar
-              </button>
-              <button
-                type="button"
-                className="link-button"
-                onClick={() => setTresDS(false)}
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        ) : null}
       </div>
     );
   }
@@ -913,10 +855,8 @@ export function PagoRapidoForm() {
     return (
       <div className="pago-rapido-result">
         <div className="invitado-banner">
-          Estás pagando como invitado: recibirás el comprobante por correo, sin
-          historial.{" "}
-          <Link href="/register">Crea tu cuenta</Link> si quieres guardar tus
-          pagos.
+          Estás pagando como invitado: al confirmar generamos tu recibo PDF y lo
+          enviamos al correo que indiques.
         </div>
         <div className="cuenta-card">
           <div className="cuenta-card-head">
@@ -953,9 +893,8 @@ export function PagoRapidoForm() {
         </button>
 
         <p className="info-note">
-          Pagando sin cuenta recibirás tu comprobante por correo, pero no verás
-          historial. Puedes <Link href="/register">crear tu cuenta</Link> cuando
-          quieras.
+          No necesitas crear cuenta para pagar. El recibo queda registrado en el
+          portal de desarrollo y disponible para descargar.
         </p>
 
         <button type="button" className="link-button" onClick={limpiar}>
@@ -1023,9 +962,9 @@ export function PagoRapidoForm() {
       </button>
 
       <p className="create-account">
-        ¿Prefieres ver todo en un solo lugar?{" "}
-        <Link href="/register">Crea tu cuenta</Link> o{" "}
-        <Link href="/login">inicia sesión</Link>.
+        ¿Ya tienes acceso al hospital?{" "}
+        <Link href="/login">Inicia sesión</Link> (opcional). El pago rápido no
+        requiere cuenta.
       </p>
     </form>
   );

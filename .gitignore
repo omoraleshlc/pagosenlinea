@@ -23,6 +23,9 @@
 # misc
 .DS_Store
 *.pem
+/storage/
+
+# generated receipts (developer host)
 
 # debug
 npm-debug.log*

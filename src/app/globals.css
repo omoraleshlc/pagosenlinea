@@ -618,6 +618,55 @@ a:hover {
   gap: 0.85rem;
 }
 
+.demo-cards {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px dashed var(--gray-300);
+  border-radius: 0.5rem;
+  background: var(--gray-50);
+}
+
+.demo-cards-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.demo-card-btn {
+  display: grid;
+  gap: 0.15rem;
+  text-align: left;
+  border: 1px solid var(--gray-300);
+  border-radius: 0.45rem;
+  background: #fff;
+  padding: 0.55rem 0.65rem;
+  font: inherit;
+  cursor: pointer;
+  color: var(--gray-800);
+}
+
+.demo-card-btn:hover {
+  border-color: var(--brand-500);
+  background: var(--brand-50);
+}
+
+.demo-card-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.demo-card-num {
+  font-size: 0.7rem;
+  color: var(--gray-500);
+}
+
+@media (max-width: 420px) {
+  .demo-cards-list {
+    grid-template-columns: 1fr;
+  }
+}
+
 .tarjeta-numero-wrap {
   position: relative;
 }
