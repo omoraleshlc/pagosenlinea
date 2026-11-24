@@ -261,6 +261,7 @@ export function PagoRapidoForm() {
           metodoLabel,
           autorizacion,
           folioPago,
+          ultimosDigitos: digitos.slice(-4),
         }),
       });
       const data = await res.json();

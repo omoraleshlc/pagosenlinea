@@ -1,10 +1,16 @@
 import fs from "fs";
 import path from "path";
 
+/** One row in the Nota de Venta detail table (Cargos | Abonos). */
 export type ReciboLinea = {
   cantidad: number;
   descripcion: string;
-  importe: number;
+  /** Amount in Cargos column (charges). */
+  cargo?: number;
+  /** Amount in Abonos column (payments / credits). */
+  abono?: number;
+  /** @deprecated Prefer cargo/abono; treated as abono when set alone. */
+  importe?: number;
 };
 
 export type ReciboData = {
@@ -18,7 +24,6 @@ export type ReciboData = {
   lineas: ReciboLinea[];
   total: number;
   fecha?: Date;
-  /** Optional SIMA-aligned header fields */
   seguro?: string;
   titular?: string;
   expediente?: string;
@@ -28,14 +33,17 @@ export type ReciboData = {
   depto?: string;
   razonSocial?: string;
   entidad?: string;
+  /** SIMA cat_cajas.terminal — shown as `T.{terminal}` on card lines. */
+  terminal?: string;
+  subtotal?: number;
+  iva?: number;
 };
 
 export type FormaPagoPortal = "tarjeta" | "spei" | "tienda";
 
 /**
- * Label for the PDF Descripción column — same text SIMA prints from
- * `paciente_transaccion_venta.forma_pago` → `sima_sat.c_forma_pago.descripcion`
- * (PDFformat V3 uses cFormaPago.getDescripcion() when there is no detalle).
+ * Label from `sima_sat.c_forma_pago.descripcion` for portal methods
+ * (same catalog `cerrar_cuentas` joins in CajaDaoImpl).
  */
 export function formaPagoDescripcion(
   metodo: FormaPagoPortal | string,
@@ -46,39 +54,50 @@ export function formaPagoDescripcion(
     case "spei":
       return "Transferencia electrónica de fondos"; // forma_pago 03
     case "tienda":
-      return "Efectivo"; // closest SAT/caja label for OXXO (01)
+      return "Efectivo"; // forma_pago 01
     default:
       return String(metodo || "Abono").trim() || "Abono";
   }
 }
 
-/** Single abono line description = type of payment only (PTV forma_pago). */
+/**
+ * Payment Descripción as built in SIMA caja `cerrar_cuentas` (CajaDaoImpl):
+ * `{c_forma_pago.descripcion} (Aut: {auth}, U.Digitos: {last4}) T.{terminal}`
+ * for card formas 04/08/28/… — matches Nota de Venta Abonos lines.
+ */
 export function descripcionLineaAbonoSima(opts: {
   metodo: FormaPagoPortal | string;
   concepto?: string;
   folio?: string;
   metodoLabel?: string;
   autorizacion?: string;
+  ultimosDigitos?: string;
+  terminal?: string;
 }): string {
-  return formaPagoDescripcion(opts.metodo);
+  const forma = formaPagoDescripcion(opts.metodo);
+  if (opts.metodo !== "tarjeta") {
+    return forma;
+  }
+  const digits =
+    String(opts.ultimosDigitos || "").replace(/\D/g, "").slice(-4) ||
+    String(opts.metodoLabel || "").match(/(\d{4})\s*$/)?.[1] ||
+    "0000";
+  const aut = String(opts.autorizacion || "").trim() || "0";
+  const terminal = String(opts.terminal || "PEL").replace(/^T\./i, "").trim() ||
+    "PEL";
+  // Visual / Ovidio reference (Nota de Venta): no comma after forma name.
+  return `${forma} (Aut: ${aut}, U.Digitos: ${digits}) T.${terminal}`;
 }
 
-/** SIMA `DecimalFormat("###,###,##0.00")` with `$ ` prefix as on Total. */
+function fmtMoney(n: number) {
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+}
+
 function importeSima(n: number) {
-  const body = new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
-  return `$ ${body}`;
-}
-
-/** Line importe cell: `$` + formatted (SIMA importe_creditoV2). */
-function importeLineaSima(n: number) {
-  const body = new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
-  return `$${body}`;
+  return `$ ${fmtMoney(n)}`;
 }
 
 function triTexto(n: number): string {
@@ -199,7 +218,7 @@ function triTexto(n: number): string {
   return result;
 }
 
-/** Port of SIMA `Numero_Letras.cantidadConLetra` (words on recibo). */
+/** Port of SIMA `Numero_Letras.cantidadConLetra`. */
 export function cantidadConLetra(amount: number): string {
   const abs = Math.abs(amount);
   const parteEntera = Math.floor(abs);
@@ -224,8 +243,28 @@ export function cantidadConLetra(amount: number): string {
   return `**${result}pesos ${cc}/100 M.N.**`;
 }
 
+function normalizeLinea(l: ReciboLinea): {
+  cantidad: number;
+  descripcion: string;
+  cargo: number;
+  abono: number;
+} {
+  const cargo = Number(l.cargo || 0);
+  let abono = Number(l.abono || 0);
+  if (!cargo && !abono && l.importe != null) {
+    abono = Number(l.importe);
+  }
+  return {
+    cantidad: l.cantidad || 1,
+    descripcion: l.descripcion,
+    cargo,
+    abono,
+  };
+}
+
 /**
- * A5 Recibo de Caja layout matching SIMA `PDFformat.createPDF_transaccion_blobV3`.
+ * A5 Nota de Venta layout aligned with SIMA `cerrar_cuentas` →
+ * `createPDF_transaccion_blob` (Cantidad | Descripcion | Cargos | Abonos).
  */
 export async function generarReciboCajaPdf(
   data: ReciboData,
@@ -242,10 +281,7 @@ export async function generarReciboCajaPdf(
   const razonSocial = data.razonSocial || "HOSPITAL LA CARLOTA";
   const entidad = data.entidad || "Servicios Hospitalarios";
   const seguro = data.seguro || "Particular";
-  const titular = data.titular || "-";
-  const expediente = data.expediente || "-";
   const caja = data.caja || "PEL";
-  const corte = data.corte || "-";
   const usuario = data.usuario || "portal";
   const depto = data.depto || "Caja";
 
@@ -263,6 +299,13 @@ export async function generarReciboCajaPdf(
     hour12: true,
     timeZone: "America/Monterrey",
   }).format(fecha);
+
+  const lineas = (data.lineas.length ? data.lineas : []).map(normalizeLinea);
+  const sumCargos = lineas.reduce((s, l) => s + l.cargo, 0);
+  const sumAbonos = lineas.reduce((s, l) => s + l.abono, 0);
+  const total = data.total || sumCargos || sumAbonos;
+  const subtotal = data.subtotal != null ? data.subtotal : total;
+  const iva = data.iva != null ? data.iva : 0;
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
@@ -283,7 +326,6 @@ export async function generarReciboCajaPdf(
     const right = pageW - doc.page.margins.right;
     const contentW = right - left;
 
-    // —— Header: logo + titles (left) / recibo meta (right) ——
     const headerTop = 18;
     let logoRight = left;
     if (fs.existsSync(logoPath)) {
@@ -291,7 +333,7 @@ export async function generarReciboCajaPdf(
         doc.image(logoPath, left, headerTop, { width: 92, height: 36 });
         logoRight = left + 98;
       } catch {
-        /* logo optional */
+        /* optional */
       }
     }
 
@@ -309,13 +351,13 @@ export async function generarReciboCajaPdf(
       .font("Helvetica")
       .fontSize(7)
       .text(entidad, titleX, headerTop + 14, { width: titleW, align: "center" })
-      .text("Recibo de Caja", titleX, headerTop + 24, {
+      .text("Nota de Venta", titleX, headerTop + 24, {
         width: titleW,
         align: "center",
       });
 
-    const metaX = left + contentW * 0.62;
-    const metaLabelW = 42;
+    const metaX = left + contentW * 0.58;
+    const metaLabelW = 58;
     const metaValX = metaX + metaLabelW;
     const metaValW = right - metaValX;
     let my = headerTop;
@@ -332,10 +374,9 @@ export async function generarReciboCajaPdf(
     metaPair("Fecha", fechaStr);
     metaPair("Hora", horaStr);
     metaPair("Caja", caja);
-    metaPair("Corte", corte);
-    metaPair("Usuario", usuario);
+    metaPair("Departamento", depto.slice(0, 10));
+    metaPair("Cajero", usuario);
 
-    // —— Patient block (SIMA left labels) ——
     let y = Math.max(headerTop + 48, my + 6);
     const labW = 48;
     const valX = left + labW;
@@ -354,33 +395,37 @@ export async function generarReciboCajaPdf(
 
     patientRow("Paciente", data.paciente);
     patientRow("Seguro", seguro);
-    patientRow("Titular", titular);
-    patientRow("Exp.", expediente);
     patientRow("Ref.", data.folio);
-    patientRow("Depto.", depto);
+    patientRow("Alta", usuario);
 
     y += 10;
 
-    // —— Movements table: Cantidad | Descripcion | Importe ——
+    // Cantidad | Descripcion | Cargos | Abonos  (SIMA widths ~2,12,2.5,2.5)
+    const colCantW = contentW * (2 / 19);
+    const colDescW = contentW * (12 / 19);
+    const colCargoW = contentW * (2.5 / 19);
+    const colAbonoW = contentW - colCantW - colDescW - colCargoW;
     const colCant = left;
-    const colCantW = contentW * (2 / 18);
     const colDesc = colCant + colCantW;
-    const colDescW = contentW * (12 / 18);
-    const colImp = colDesc + colDescW;
-    const colImpW = contentW - colCantW - colDescW;
-    const rowH = 16;
+    const colCargo = colDesc + colDescW;
+    const colAbono = colCargo + colCargoW;
+    const rowH = 15;
 
-    const drawRowBorder = (
+    const vline = (x: number, top: number, h: number) => {
+      doc
+        .moveTo(x, top)
+        .lineTo(x, top + h)
+        .stroke();
+    };
+
+    const drawGrid = (
       top: number,
       height: number,
-      opts: { left?: boolean; right?: boolean; top?: boolean; bottom?: boolean },
+      opts: { top?: boolean; bottom?: boolean } = {},
     ) => {
       doc.strokeColor("#000").lineWidth(0.4);
-      if (opts.top) {
-        doc
-          .moveTo(left, top)
-          .lineTo(right, top)
-          .stroke();
+      if (opts.top !== false) {
+        doc.moveTo(left, top).lineTo(right, top).stroke();
       }
       if (opts.bottom) {
         doc
@@ -388,53 +433,45 @@ export async function generarReciboCajaPdf(
           .lineTo(right, top + height)
           .stroke();
       }
-      if (opts.left) {
-        doc
-          .moveTo(left, top)
-          .lineTo(left, top + height)
-          .stroke();
-        doc
-          .moveTo(colDesc, top)
-          .lineTo(colDesc, top + height)
-          .stroke();
-      }
-      if (opts.right) {
-        doc
-          .moveTo(colImp, top)
-          .lineTo(colImp, top + height)
-          .stroke();
-        doc
-          .moveTo(right, top)
-          .lineTo(right, top + height)
-          .stroke();
-      }
+      vline(left, top, height);
+      vline(colDesc, top, height);
+      vline(colCargo, top, height);
+      vline(colAbono, top, height);
+      vline(right, top, height);
     };
 
-    // Header row
-    drawRowBorder(y, rowH, { left: true, right: true, top: true, bottom: true });
+    drawGrid(y, rowH, { top: true, bottom: true });
     doc.font("Helvetica").fontSize(7).fillColor("#000");
-    doc.text("Cantidad", colCant + 3, y + 4, {
-      width: colCantW - 6,
-      align: "left",
-    });
+    doc.text("Cantidad", colCant + 2, y + 4, { width: colCantW - 4 });
     doc.text("Descripcion", colDesc + 3, y + 4, { width: colDescW - 6 });
-    doc.text("Importe", colImp + 3, y + 4, {
-      width: colImpW - 6,
-      align: "left",
+    doc.text("Cargos", colCargo + 2, y + 4, {
+      width: colCargoW - 4,
+      align: "right",
+    });
+    doc.text("Abonos", colAbono + 2, y + 4, {
+      width: colAbonoW - 4,
+      align: "right",
     });
     y += rowH;
 
-    const lineas =
-      data.lineas.length > 0
-        ? data.lineas
-        : [{ cantidad: 1, descripcion: "Abono", importe: data.total }];
+    const rows =
+      lineas.length > 0
+        ? lineas
+        : [
+            {
+              cantidad: 1,
+              descripcion: "Abono",
+              cargo: 0,
+              abono: total,
+            },
+          ];
 
-    for (const linea of lineas) {
+    for (const linea of rows) {
       const descH = Math.max(
         rowH,
         doc.heightOfString(linea.descripcion, { width: colDescW - 8 }) + 8,
       );
-      drawRowBorder(y, descH, { left: true, right: true });
+      drawGrid(y, descH, { top: false });
       doc.font("Helvetica").fontSize(7);
       doc.text(String(linea.cantidad), colCant + 2, y + 4, {
         width: colCantW - 4,
@@ -443,61 +480,65 @@ export async function generarReciboCajaPdf(
       doc.text(linea.descripcion, colDesc + 4, y + 4, {
         width: colDescW - 8,
       });
-      doc.text(importeLineaSima(linea.importe), colImp + 2, y + 4, {
-        width: colImpW - 6,
-        align: "right",
-      });
+      doc.text(
+        linea.cargo > 0 ? importeSima(linea.cargo) : "",
+        colCargo + 2,
+        y + 4,
+        { width: colCargoW - 4, align: "right" },
+      );
+      doc.text(
+        linea.abono > 0 ? importeSima(linea.abono) : "",
+        colAbono + 2,
+        y + 4,
+        { width: colAbonoW - 4, align: "right" },
+      );
       y += descH;
     }
 
-    // Spacer rows (SIMA pads empty bill rows)
-    for (let i = 0; i < 4; i++) {
-      drawRowBorder(y, rowH, { left: true, right: true });
+    for (let i = 0; i < 3; i++) {
+      drawGrid(y, rowH, { top: false });
       y += rowH;
     }
 
-    // Notes + amount in words (bordered box, colspan visual)
-    const notesH = 48;
+    // Amount in words (left) + Subtotal/IVA/Total (right) — Nota de Venta style
+    const footH = 52;
     doc
       .strokeColor("#000")
       .lineWidth(0.4)
-      .rect(left, y, contentW * (14 / 18), notesH)
+      .rect(left, y, contentW * (14 / 19), footH)
       .stroke();
     doc
-      .rect(left + contentW * (14 / 18), y, contentW * (4 / 18), notesH)
+      .rect(left + contentW * (14 / 19), y, contentW * (5 / 19), footH)
       .stroke();
 
     doc.font("Helvetica").fontSize(7).fillColor("#000");
-    doc.text(
-      "Este documento no es un comprobante fiscal",
-      left + 6,
-      y + 10,
-      { width: contentW * (14 / 18) - 12 },
-    );
-    doc.text(cantidadConLetra(data.total), left + 6, y + 26, {
-      width: contentW * (14 / 18) - 12,
+    doc.text(cantidadConLetra(total), left + 6, y + 18, {
+      width: contentW * (14 / 19) - 12,
     });
-    y += notesH;
 
-    // Total row
-    const totalH = 18;
-    doc
-      .strokeColor("#000")
-      .lineWidth(0.4)
-      .rect(left, y, contentW, totalH)
-      .stroke();
-    doc.font("Helvetica").fontSize(7);
-    doc.text("Total", left + 6, y + 5, { width: 80 });
-    doc.text(importeSima(data.total), left + contentW / 2, y + 5, {
-      width: contentW / 2 - 8,
+    const totX = left + contentW * (14 / 19) + 4;
+    const totW = contentW * (5 / 19) - 8;
+    doc.text("Subtotal", totX, y + 8, { width: totW / 2 });
+    doc.text(importeSima(subtotal), totX, y + 8, {
+      width: totW,
       align: "right",
     });
-    y += totalH + 12;
+    doc.text("IVA", totX, y + 20, { width: totW / 2 });
+    doc.text(importeSima(iva), totX, y + 20, {
+      width: totW,
+      align: "right",
+    });
+    doc.font("Helvetica-Bold");
+    doc.text("Total", totX, y + 34, { width: totW / 2 });
+    doc.text(importeSima(total), totX, y + 34, {
+      width: totW,
+      align: "right",
+    });
+    y += footH + 12;
 
-    // Footer (SIMA celdas_footer)
     doc.font("Helvetica").fontSize(7).fillColor("#000");
     doc.text(
-      "Si desea facturar debera hacerlo el mismo dia de la venta.\nhttp://hospitallacarlota.com/aviso-privacidad",
+      "Si desea facturar debera hacerlo el mismo dia de la venta.\nhttp://hospitallacarlota.com/aviso-privacidad\nEste documento no es un comprobante CFDI valido",
       left,
       y,
       { width: contentW },

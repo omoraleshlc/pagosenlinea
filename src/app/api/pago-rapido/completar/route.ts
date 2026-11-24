@@ -23,6 +23,8 @@ type Body = {
   metodoLabel?: string;
   autorizacion?: string;
   folioPago?: string;
+  /** Last 4 card digits (SIMA U.Digitos). Falls back to metodoLabel. */
+  ultimosDigitos?: string;
 };
 
 function mxn(n: number) {
@@ -59,6 +61,10 @@ export async function POST(req: NextRequest) {
   const email = String(body.email || "").trim();
   const metodoLabel = String(body.metodoLabel || "Tarjeta").trim();
   const autorizacion = String(body.autorizacion || "").trim() || undefined;
+  const ultimosDigitos =
+    String(body.ultimosDigitos || "").replace(/\D/g, "").slice(-4) ||
+    metodoLabel.match(/(\d{4})\s*$/)?.[1] ||
+    undefined;
   const folioPago =
     String(body.folioPago || "").trim() ||
     `PEL${100000 + randomInt(900000)}`;
@@ -79,12 +85,27 @@ export async function POST(req: NextRequest) {
   }
 
   const reciboNum = String(900000 + randomInt(99999));
-  // SIMA recibo credit line = PTV forma_pago label only (not cargo conceptos).
+  // Nota de Venta / cerrar_cuentas: cargos in Cargos, payment in Abonos with
+  // `Tarjeta de crédito (Aut: …, U.Digitos: ####) T.PEL`
+  const pagoDesc = descripcionLineaAbonoSima({
+    metodo: "tarjeta",
+    metodoLabel,
+    autorizacion,
+    ultimosDigitos,
+    terminal: "PEL",
+  });
   const lineas = [
+    ...cuenta.cargos.map((c) => ({
+      cantidad: 1,
+      descripcion: c.concepto,
+      cargo: c.monto,
+      abono: 0,
+    })),
     {
       cantidad: 1,
-      descripcion: descripcionLineaAbonoSima({ metodo: "tarjeta" }),
-      importe: cuenta.total,
+      descripcion: pagoDesc,
+      cargo: 0,
+      abono: cuenta.total,
     },
   ];
 
@@ -107,6 +128,7 @@ export async function POST(req: NextRequest) {
       corte: "-",
       usuario: "portal",
       depto: "Caja",
+      terminal: "PEL",
     });
   } catch (err) {
     console.error("recibo pdf", err);
