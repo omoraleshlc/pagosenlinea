@@ -85,9 +85,9 @@ export function descripcionLineaAbonoSima(opts: {
   const aut = String(opts.autorizacion || "").trim() || "0";
   const terminal =
     String(opts.terminal || "PEL").replace(/^T\./i, "").trim() || "PEL";
-  // Exact CajaDaoImpl cerrar_cuentas string (formas 04/08/28/…):
-  // descripcion + ",  (Aut: …, U.Digitos: …), T." + catCajas.terminal
-  return `${forma},  (Aut: ${aut}, U.Digitos: ${digits}), T.${terminal}`;
+  // Same as Laravel DescripcionAbono / PlanificadorCobro (cerrar_cuentas):
+  // `{forma} (Aut: …, U.Digitos: …)  T.{terminal}`
+  return `${forma} (Aut: ${aut}, U.Digitos: ${digits})  T.${terminal}`;
 }
 
 function fmtMoney(n: number) {
