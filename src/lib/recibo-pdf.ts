@@ -83,10 +83,11 @@ export function descripcionLineaAbonoSima(opts: {
     String(opts.metodoLabel || "").match(/(\d{4})\s*$/)?.[1] ||
     "0000";
   const aut = String(opts.autorizacion || "").trim() || "0";
-  const terminal = String(opts.terminal || "PEL").replace(/^T\./i, "").trim() ||
-    "PEL";
-  // Visual / Ovidio reference (Nota de Venta): no comma after forma name.
-  return `${forma} (Aut: ${aut}, U.Digitos: ${digits}) T.${terminal}`;
+  const terminal =
+    String(opts.terminal || "PEL").replace(/^T\./i, "").trim() || "PEL";
+  // Exact CajaDaoImpl cerrar_cuentas string (formas 04/08/28/…):
+  // descripcion + ",  (Aut: …, U.Digitos: …), T." + catCajas.terminal
+  return `${forma},  (Aut: ${aut}, U.Digitos: ${digits}), T.${terminal}`;
 }
 
 function fmtMoney(n: number) {
