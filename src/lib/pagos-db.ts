@@ -168,7 +168,7 @@ export async function guardarPagoCompletado(row: {
         row.folioPago,
         `pel-${row.folio}-${row.folioPago}`,
         row.reciboNum,
-        row.autorizacion || "demo_card_ok",
+        row.autorizacion || "portal_ok",
         row.metodo === "tarjeta" ? "Pagos en línea" : null,
         JSON.stringify({
           ...(typeof row.payload === "object" && row.payload

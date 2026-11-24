@@ -2,7 +2,6 @@ import { randomInt } from "crypto";
 import fs from "fs";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
-import { demoPaymentsEnabled } from "@/lib/demo-cards";
 import { enviarReciboEmail } from "@/lib/mail";
 import {
   guardarPagoCompletado,
@@ -35,17 +34,6 @@ function mxn(n: number) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!demoPaymentsEnabled()) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code: "demo_off",
-        message: "El cobro demo está apagado en este servidor.",
-      },
-      { status: 403 },
-    );
-  }
-
   let body: Body;
   try {
     body = (await req.json()) as Body;
@@ -161,7 +149,7 @@ export async function POST(req: NextRequest) {
         paciente: cuenta.paciente,
         cargos: cuenta.cargos,
         metodoLabel,
-        provider: "demo",
+        provider: "portal",
         pdfPath: pdfName,
       },
     });
@@ -172,7 +160,7 @@ export async function POST(req: NextRequest) {
         ok: false,
         code: "db_unavailable",
         message:
-          "Se generó el recibo, pero no pudimos guardarlo en la base de desarrollo.",
+          "Se generó el recibo, pero no pudimos guardarlo en la base de pagos.",
       },
       { status: 502 },
     );

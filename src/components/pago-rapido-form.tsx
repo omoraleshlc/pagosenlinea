@@ -2,11 +2,6 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  DEMO_CARDS,
-  demoPaymentsEnabled,
-  type DemoCard,
-} from "@/lib/demo-cards";
 import { Cargo, fechaCorta, folioValido, mxn } from "@/lib/mock-cargos";
 import { FechaNacimientoPicker } from "./fecha-nacimiento-picker";
 
@@ -33,7 +28,7 @@ type PagoOk = {
   ticketUrl?: string;
   vence?: string;
   email: string;
-  provider?: "demo" | "mercadopago";
+  provider?: "portal" | "mercadopago";
 };
 
 function fechaVenceMx(iso?: string) {
@@ -105,10 +100,6 @@ export function PagoRapidoForm() {
     cvv: "",
   });
   const [procesando, setProcesando] = useState(false);
-  const [tresDS, setTresDS] = useState(false);
-  const [codigo3ds, setCodigo3ds] = useState("");
-  const [error3ds, setError3ds] = useState("");
-  const [intentos3ds, setIntentos3ds] = useState(0);
   const [pagoOk, setPagoOk] = useState<PagoOk | null>(null);
   const [fallo, setFallo] = useState<{
     titulo: string;
@@ -118,7 +109,6 @@ export function PagoRapidoForm() {
   } | null>(null);
   const [copiado, setCopiado] = useState(false);
   const [cancelando, setCancelando] = useState(false);
-  const demoPagos = demoPaymentsEnabled();
 
   const folioOk = folioValido(folio);
   const nacimientoOk = fechaMxValida(nacimiento);
@@ -201,7 +191,6 @@ export function PagoRapidoForm() {
     setPagoOk(null);
     setFallo(null);
     setAcepto(false);
-    setTresDS(false);
     setTarjeta({ numero: "", nombre: "", vence: "", cvv: "" });
   }
 
@@ -221,30 +210,8 @@ export function PagoRapidoForm() {
     }));
   }
 
-  function aplicarTarjetaDemo(card: DemoCard) {
-    const d = card.numero.replace(/\D/g, "").slice(0, 16);
-    setTarjeta({
-      numero: d.replace(/(.{4})/g, "$1 ").trim(),
-      nombre: card.nombre,
-      vence: card.vence,
-      cvv: card.cvv,
-    });
-  }
-
-  async function terminarPagoDemo(estado: PagoOk["estado"]) {
+  async function completarPagoTarjeta() {
     if (!resultado) return;
-    if (estado !== "Pagado") {
-      setPagoOk({
-        estado,
-        folioPago: folioPagoNuevo(),
-        monto: resultado.total,
-        metodoLabel,
-        email: email.trim(),
-        provider: "demo",
-      });
-      setPaso("resultado");
-      return;
-    }
 
     setProcesando(true);
     setErrorMsg(null);
@@ -279,7 +246,7 @@ export function PagoRapidoForm() {
         monto: data.total,
         metodoLabel,
         email: data.email,
-        provider: "demo",
+        provider: "portal",
         autorizacion: data.autorizacion,
         ticketUrl: data.pdfUrl,
         referencia: data.reciboNum ? `Recibo ${data.reciboNum}` : undefined,
@@ -362,66 +329,7 @@ export function PagoRapidoForm() {
       void pagarConReferencia();
       return;
     }
-    if (!demoPagos) {
-      rechazar(
-        "Pagos con tarjeta aún no están activos",
-        "El modo demo está apagado. Conecta el procesador real (p. ej. Conekta) antes de cobrar en producción.",
-      );
-      return;
-    }
-    setProcesando(true);
-    window.setTimeout(() => {
-      setProcesando(false);
-      const final = digitos.slice(-4);
-      if (final === "0002") {
-        rechazar(
-          "Tu banco rechazó el pago",
-          "Fondos insuficientes o la tarjeta no está habilitada para compras en línea.",
-        );
-        return;
-      }
-      if (final === "0069") {
-        rechazar(
-          "Tu tarjeta está vencida",
-          "La fecha de vencimiento ya pasó. Revisa los datos o usa otra tarjeta.",
-        );
-        return;
-      }
-      // Demo success card (4242…): skip 3DS friction and complete payment.
-      if (final === "4242") {
-        void terminarPagoDemo("Pagado");
-        return;
-      }
-      setCodigo3ds("123456");
-      setError3ds("");
-      setIntentos3ds(0);
-      setTresDS(true);
-    }, 900);
-  }
-
-  function confirmar3DS() {
-    if (codigo3ds.length < 6) return;
-    if (codigo3ds === "000000") {
-      const next = intentos3ds + 1;
-      setIntentos3ds(next);
-      setCodigo3ds("123456");
-      if (next >= 3) {
-        setTresDS(false);
-        rechazar(
-          "No pudimos verificar tu identidad",
-          "Escribiste un código incorrecto 3 veces. Por seguridad bloqueamos este intento.",
-        );
-      } else {
-        setError3ds(
-          "000000 es el código de fallo de prueba. Usa 123456 (ya lo rellenamos). Te quedan " +
-            `${3 - next} ${3 - next === 1 ? "intento" : "intentos"}.`,
-        );
-      }
-      return;
-    }
-    setError3ds("");
-    setTresDS(false);
-    void terminarPagoDemo("Pagado");
+    void completarPagoTarjeta();
   }
 
   async function copiarTexto(texto: string) {
@@ -785,29 +693,6 @@ export function PagoRapidoForm() {
 
         {metodo === "tarjeta" ? (
           <div className="tarjeta-fields">
-            {demoPagos ? (
-              <div className="demo-cards" aria-label="Tarjetas de prueba">
-                <p className="field-hint" style={{ margin: 0 }}>
-                  Tarjetas ficticias (solo desarrollo — no se cobra nada):
-                </p>
-                <div className="demo-cards-list">
-                  {DEMO_CARDS.map((card) => (
-                    <button
-                      key={card.id}
-                      type="button"
-                      className="demo-card-btn"
-                      title={card.hint}
-                      onClick={() => aplicarTarjetaDemo(card)}
-                    >
-                      <span className="demo-card-label">{card.label}</span>
-                      <span className="demo-card-num mono">
-                        ···· {card.numero.replace(/\D/g, "").slice(-4)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
             <label className="field">
               <span>Número de tarjeta</span>
               <div className="tarjeta-numero-wrap">
@@ -863,17 +748,6 @@ export function PagoRapidoForm() {
                 />
               </label>
             </div>
-            {demoPagos ? (
-              <p className="field-hint">
-                Éxito: 4242… + código 3DS ≠ 000000. Rechazo: …0002. Vencida:
-                …0069. Fallo 3DS: escribe 000000 tres veces. Apaga con
-                NEXT_PUBLIC_DEMO_PAYMENTS=false al pasar a producción.
-              </p>
-            ) : (
-              <p className="field-hint">
-                Modo demo apagado. Conecta el procesador real antes de cobrar.
-              </p>
-            )}
           </div>
         ) : (
           <p className="info-note">
@@ -973,49 +847,6 @@ export function PagoRapidoForm() {
           Cambiar método
         </button>
 
-        {tresDS ? (
-          <div className="modal-3ds" role="dialog" aria-modal="true">
-            <div className="modal-3ds-card">
-              <h3>Verificación 3D Secure</h3>
-              <p>
-                Demostración: confirma con <strong>123456</strong>. Solo{" "}
-                <strong>000000</strong> simula un código incorrecto.
-              </p>
-              <label className="field">
-                <span>Código</span>
-                <input
-                  value={codigo3ds}
-                  onChange={(e) =>
-                    setCodigo3ds(e.target.value.replace(/\D/g, "").slice(0, 6))
-                  }
-                  inputMode="numeric"
-                  placeholder="123456"
-                  autoFocus
-                />
-              </label>
-              {error3ds ? (
-                <p className="field-error" role="alert">
-                  {error3ds}
-                </p>
-              ) : null}
-              <button
-                type="button"
-                className="btn-primary btn-block"
-                disabled={codigo3ds.length < 6}
-                onClick={confirmar3DS}
-              >
-                Confirmar
-              </button>
-              <button
-                type="button"
-                className="link-button"
-                onClick={() => setTresDS(false)}
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        ) : null}
       </div>
     );
   }
